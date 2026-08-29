@@ -48,7 +48,9 @@ export function BackupScreen({ onBack, onDataChanged, counts }: Props) {
     setMessage(null);
     try {
       const n = await restoreFromFile(file);
-      setMessage(`読みこみました（漢字の記録 ${n.progress}件 / 学習の記録 ${n.sessions}件）。`);
+      setMessage(
+        `読みこみました（漢字の記録 ${n.progress}件 / 学習の記録 ${n.sessions}件 / なぞり書き ${n.traces}件）。`,
+      );
       onDataChanged();
     } catch (e) {
       setError(e instanceof Error ? e.message : '読みこみに失敗しました。');

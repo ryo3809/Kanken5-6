@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import kanjiData from './data/kanji.json';
 import wordsData from './data/words.json';
-import type { KanjiEntry, Progress, Question, Settings, WordEntry } from './lib/types';
+import type { KanjiEntry, Progress, Question, Settings, TraceRecord, WordEntry } from './lib/types';
 import { DEFAULT_SETTINGS } from './lib/types';
 import {
-  addSession, isStorageAvailable, loadAllProgress, loadSessions, loadSettings,
-  saveProgressBatch, saveSettings, StorageError,
+  addSession, isStorageAvailable, loadAllProgress, loadSessions, loadSettings, loadTraces,
+  saveProgressBatch, saveSettings, saveTraces, StorageError,
 } from './lib/db';
 import { applyAnswer, newProgress, pickForSession, summarize, toDateKey } from './lib/leitner';
 import { buildWordIndex, charsForKyu, collectReadings, makeReadingQuestion } from './lib/questions';
@@ -16,12 +16,20 @@ import { Session } from './screens/Session';
 import { Result } from './screens/Result';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { BackupScreen } from './screens/BackupScreen';
+import { Tracing } from './screens/Tracing';
+import { preloadGrade } from './lib/strokeStore';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 const ALL_KANJI = (kanjiData as { kanji: KanjiEntry[] }).kanji;
 const ALL_WORDS = (wordsData as { words: WordEntry[] }).words;
 
-type Screen = 'loading' | 'home' | 'session' | 'result' | 'settings' | 'backup';
+type Screen =
+  | 'loading' | 'home' | 'session' | 'result'
+  | 'tracing' | 'tracingResult'
+  | 'settings' | 'backup';
+
+/** なぞり書き1回ぶんの字数 */
+const TRACE_SESSION_SIZE = 3;
 
 /** 連続学習日数。1日でも空いてもゼロには戻さない（続ける気持ちを折らないため） */
 function calcStreak(dates: string[]): number {
@@ -51,6 +59,9 @@ export default function App() {
     setProgress(next);
   }, []);
   const [sessionDates, setSessionDates] = useState<string[]>([]);
+  const [traces, setTraces] = useState<Map<string, TraceRecord>>(new Map());
+  const [traceQueue, setTraceQueue] = useState<KanjiEntry[]>([]);
+  const [traceResult, setTraceResult] = useState<{ traced: string[]; retries: number } | null>(null);
   const [todayAnswered, setTodayAnswered] = useState(0);
   const [sessionCount, setSessionCount] = useState(0);
   const [storageOk, setStorageOk] = useState(true);
@@ -66,9 +77,12 @@ export default function App() {
     try {
       const ok = await isStorageAvailable();
       setStorageOk(ok);
-      const [s, p, sess] = await Promise.all([loadSettings(), loadAllProgress(), loadSessions()]);
+      const [s, p, sess, tr] = await Promise.all([
+        loadSettings(), loadAllProgress(), loadSessions(), loadTraces(),
+      ]);
       setSettings(s);
       setProgressBoth(p);
+      setTraces(tr);
       setSessionDates(sess.map((x) => x.date));
       setSessionCount(sess.length);
       const today = toDateKey();
@@ -125,6 +139,80 @@ export default function App() {
     setStartedAt(Date.now());
     setSaveError(null);
     setScreen('session');
+  }
+
+  // ── なぞり書き ───────────────────────────────────
+  // なぞり書きは「おぼえるための練習」なので、
+  // 読みの復習の箱（Leitner）は動かしません。テストではないためです。
+  function startTracing() {
+    const maxGrade = settings.kyu === 6 ? 5 : 6;
+    const pool = ALL_KANJI.filter((k) => k.grade <= maxGrade).sort(
+      (a, b) => a.grade - b.grade || a.order - b.order,
+    );
+    // ならべる順番:
+    //   1. なぞった回数が少ない字を先に（まだの字が最優先）
+    //   2. その級の新出範囲を先に（6級なら5年配当、5級なら6年配当）
+    //   3. そのあとは学年の高いほうから（むずかしい字を先に練習する）
+    //   ※「一」のような やさしい字から始めても、小学5年生には練習になりません
+    const sorted = [...pool].sort((a, b) => {
+      const ta = traces.get(a.c)?.times ?? 0;
+      const tb = traces.get(b.c)?.times ?? 0;
+      if (ta !== tb) return ta - tb;
+      if (a.grade !== b.grade) return b.grade - a.grade;
+      return a.order - b.order;
+    });
+    const queue = sorted.slice(0, TRACE_SESSION_SIZE);
+    if (queue.length === 0) {
+      setLoadError('なぞれる かんじが 見つかりませんでした。');
+      return;
+    }
+    preloadGrade(queue[0].grade);
+    setTraceQueue(queue);
+    setTraceResult(null);
+    setSaveError(null);
+    setScreen('tracing');
+  }
+
+  async function finishTracing(result: { traced: string[]; retries: number }) {
+    setTraceResult(result);
+    setScreen('tracingResult');
+    if (result.traced.length === 0) return;
+    try {
+      const now = Date.now();
+      const updated = new Map(traces);
+      const items: TraceRecord[] = [];
+      for (const c of result.traced) {
+        const cur = updated.get(c) ?? { c, times: 0, retries: 0, lastTracedAt: 0 };
+        const next: TraceRecord = {
+          c,
+          times: cur.times + 1,
+          // やり直し回数は、その回のぶんを字数で割ってならす
+          retries: cur.retries + Math.round(result.retries / result.traced.length),
+          lastTracedAt: now,
+        };
+        updated.set(c, next);
+        items.push(next);
+      }
+      await saveTraces(items);
+      await addSession({
+        date: toDateKey(),
+        startedAt: now,
+        finishedAt: now,
+        kyu: settings.kyu,
+        mode: 'tracing',
+        total: result.traced.length,
+        correct: result.traced.length,
+        wrongChars: [],
+      });
+      setTraces(updated);
+      setSessionDates((d) => [...d, toDateKey()]);
+      setSessionCount((n) => n + 1);
+      setSaveError(null);
+    } catch (e) {
+      setSaveError(
+        e instanceof StorageError ? e.kidMessage : 'きろくの ほぞんに しっぱいしました。',
+      );
+    }
   }
 
   // ── 1問こたえたとき ─────────────────────────────
@@ -219,6 +307,8 @@ export default function App() {
           storageOk={storageOk}
           blockedCount={chars.length - usableChars.length}
           onStart={startSession}
+          onStartTracing={startTracing}
+          tracedCount={traces.size}
           onOpenSettings={() => setScreen('settings')}
           onOpenBackup={() => setScreen('backup')}
           onDismissInstallHint={() => void changeSettings({ ...settings, dismissedInstallHint: true })}
@@ -242,6 +332,36 @@ export default function App() {
           onHome={() => setScreen('home')}
           onAgain={startSession}
         />
+      )}
+
+      {screen === 'tracing' && (
+        <Tracing
+          queue={traceQueue}
+          onFinish={(r) => void finishTracing(r)}
+          onQuit={() => setScreen('home')}
+        />
+      )}
+
+      {screen === 'tracingResult' && traceResult && (
+        <div className="app">
+          <div className="card center">
+            <h1>なぞりがき おつかれさま！</h1>
+            <p style={{ fontSize: 30, margin: '8px 0 0' }}>
+              {traceResult.traced.join('　')}
+            </p>
+            <p className="muted">{traceResult.traced.length}字 なぞれました</p>
+            {traceResult.retries > 0 && (
+              <p className="muted">やりなおし {traceResult.retries}かい</p>
+            )}
+          </div>
+          {saveError && <div className="notice bad">{saveError}</div>}
+          <button className="primary" onClick={() => setScreen('home')}>
+            ホームに もどる
+          </button>
+          <button className="ghost wide" style={{ marginTop: 8 }} onClick={startTracing}>
+            もう1かい なぞる
+          </button>
+        </div>
       )}
 
       {screen === 'settings' && (

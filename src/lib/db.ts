@@ -9,16 +9,17 @@
 //   ・保存できなくても、アプリ自体は動き続ける（その回の記録が残らないだけ）
 
 import { openDB, type IDBPDatabase } from 'idb';
-import type { Progress, SessionRecord, Settings } from './types';
+import type { Progress, SessionRecord, Settings, TraceRecord } from './types';
 import { DEFAULT_SETTINGS } from './types';
 
 const DB_NAME = 'kanken-5-6';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 export const STORE = {
   progress: 'progress',
   sessions: 'sessions',
   settings: 'settings',
+  traces: 'traces',
 } as const;
 
 /** 保存まわりで起きた問題を、子どもにも分かる日本語で表す */
@@ -66,6 +67,11 @@ function getDb(): Promise<IDBPDatabase> {
         // 設定。キーは 'settings' 固定の1件だけ
         if (!db.objectStoreNames.contains(STORE.settings)) {
           db.createObjectStore(STORE.settings);
+        }
+        // なぞり書きの記録（版2で追加）。
+        // 既にある記録はそのまま残るので、古い記録が消えることはありません。
+        if (!db.objectStoreNames.contains(STORE.traces)) {
+          db.createObjectStore(STORE.traces, { keyPath: 'c' });
         }
       },
       blocked() {
@@ -144,6 +150,31 @@ export async function loadSessions(): Promise<SessionRecord[]> {
   }
 }
 
+// ─── なぞり書きの記録 ──────────────────────────────────────
+
+export async function loadTraces(): Promise<Map<string, TraceRecord>> {
+  try {
+    const db = await getDb();
+    const all: TraceRecord[] = await db.getAll(STORE.traces);
+    return new Map(all.map((t) => [t.c, t]));
+  } catch {
+    // なぞり書きの記録が読めなくても、練習はできるので空で進む
+    return new Map();
+  }
+}
+
+export async function saveTraces(items: TraceRecord[]): Promise<void> {
+  if (items.length === 0) return;
+  try {
+    const db = await getDb();
+    const tx = db.transaction(STORE.traces, 'readwrite');
+    await Promise.all(items.map((t) => tx.store.put(t)));
+    await tx.done;
+  } catch (e) {
+    throw new StorageError(toKidMessage(e), e);
+  }
+}
+
 // ─── 設定 ──────────────────────────────────────────────────
 
 export async function loadSettings(): Promise<Settings> {
@@ -172,15 +203,17 @@ export async function saveSettings(s: Settings): Promise<void> {
 export async function exportAll(): Promise<{
   progress: Progress[];
   sessions: SessionRecord[];
+  traces: TraceRecord[];
   settings: Settings;
 }> {
   const db = await getDb();
-  const [progress, sessions, settings] = await Promise.all([
+  const [progress, sessions, traces, settings] = await Promise.all([
     db.getAll(STORE.progress) as Promise<Progress[]>,
     db.getAll(STORE.sessions) as Promise<SessionRecord[]>,
+    db.getAll(STORE.traces) as Promise<TraceRecord[]>,
     loadSettings(),
   ]);
-  return { progress, sessions, settings };
+  return { progress, sessions, traces, settings };
 }
 
 /**
@@ -192,13 +225,18 @@ export async function exportAll(): Promise<{
 export async function importAll(data: {
   progress: Progress[];
   sessions: SessionRecord[];
+  traces?: TraceRecord[];
   settings: Settings;
 }): Promise<void> {
   try {
     const db = await getDb();
-    const tx = db.transaction([STORE.progress, STORE.sessions, STORE.settings], 'readwrite');
+    const tx = db.transaction(
+      [STORE.progress, STORE.sessions, STORE.traces, STORE.settings],
+      'readwrite',
+    );
     const pStore = tx.objectStore(STORE.progress);
     const sStore = tx.objectStore(STORE.sessions);
+    const tStore = tx.objectStore(STORE.traces);
     const cStore = tx.objectStore(STORE.settings);
 
     // ここで1つずつ await してはいけない。
@@ -208,7 +246,9 @@ export async function importAll(data: {
     const ops: Promise<unknown>[] = [
       pStore.clear(),
       sStore.clear(),
+      tStore.clear(),
       ...data.progress.map((p) => pStore.put(p)),
+      ...(data.traces ?? []).map((t) => tStore.put(t)),
       ...data.sessions.map((s) => {
         // id は保存時に自動でつくので、取りのぞいてから入れる
         const { id: _drop, ...rest } = s;
@@ -231,10 +271,16 @@ export async function importAll(data: {
 export async function eraseAll(): Promise<void> {
   try {
     const db = await getDb();
-    const tx = db.transaction([STORE.progress, STORE.sessions, STORE.settings], 'readwrite');
-    await tx.objectStore(STORE.progress).clear();
-    await tx.objectStore(STORE.sessions).clear();
-    await tx.objectStore(STORE.settings).clear();
+    const tx = db.transaction(
+      [STORE.progress, STORE.sessions, STORE.traces, STORE.settings],
+      'readwrite',
+    );
+    await Promise.all([
+      tx.objectStore(STORE.progress).clear(),
+      tx.objectStore(STORE.sessions).clear(),
+      tx.objectStore(STORE.traces).clear(),
+      tx.objectStore(STORE.settings).clear(),
+    ]);
     await tx.done;
   } catch (e) {
     throw new StorageError(toKidMessage(e), e);

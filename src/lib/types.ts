@@ -76,11 +76,22 @@ export interface SessionRecord {
   finishedAt: number;
   kyu: Kyu;
   /** 出した問題の分野 */
-  mode: 'reading';
+  mode: 'reading' | 'tracing';
   total: number;
   correct: number;
   /** まちがえた漢字 */
   wrongChars: string[];
+}
+
+/** なぞり書きの記録。漢字ごとに、なぞった回数を数える */
+export interface TraceRecord {
+  /** 漢字（これがキー） */
+  c: string;
+  /** 最後までなぞれた回数 */
+  times: number;
+  /** やり直した回数の合計（苦手さの目やす） */
+  retries: number;
+  lastTracedAt: number;
 }
 
 /** 設定 */
@@ -125,5 +136,6 @@ export interface BackupFile {
   exportedAt: string;
   progress: Progress[];
   sessions: SessionRecord[];
+  traces?: TraceRecord[];
   settings: Settings;
 }

@@ -209,3 +209,79 @@ label.field .control button[aria-pressed='true'] {
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* ───── なぞり書き ───── */
+
+.tracebox {
+  position: relative;
+  width: 100%;
+  /* 1マスは正方形。せまい画面でも 280px は確保する */
+  aspect-ratio: 1 / 1;
+  max-width: min(78vh, 460px);
+  min-width: 280px;
+  margin: 0 auto;
+  background: #fff;
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  /* 書いている最中に画面が動かないようにする */
+  touch-action: none;
+}
+.tracebox.drawing { border-color: var(--accent); }
+
+.tracebox .guide,
+.tracebox .ink {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.tracebox .ink { pointer-events: none; }
+
+.guide .grid-outer { fill: none; stroke: #efe9dc; stroke-width: 1; }
+.guide .grid-inner { stroke: #f2ece0; stroke-width: 1; stroke-dasharray: 3 3; }
+
+.guide path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* まだ書いていない画：うっすら */
+.guide .stroke-future { stroke: #e6e0d3; stroke-width: 4.5; }
+/* 書きおわった画：はっきり */
+.guide .stroke-done { stroke: #a9a294; stroke-width: 4.5; }
+/* いま書く画：お手本として目立たせる */
+.guide .stroke-current { stroke: #f6c99a; stroke-width: 6; }
+/* 書きはじめの場所 */
+.guide .start-dot { fill: var(--accent); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .guide .start-dot { animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse {
+    0%, 100% { r: 4.5; opacity: 1; }
+    50% { r: 6.5; opacity: 0.6; }
+  }
+}
+
+/* 何画目まで書けたかの点々 */
+.strokedots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  margin-top: 14px;
+}
+.strokedots span {
+  width: 12px;
+  height: 12px;
+  border-radius: 99px;
+  background: var(--line);
+}
+.strokedots span.done { background: var(--accent); }
+.strokedots span.now { background: #fff; border: 2px solid var(--accent); }
+
+/* 横向きのとき、マスと説明を横にならべる */
+@media (orientation: landscape) and (min-width: 700px) {
+  .tracebox { max-width: min(64vh, 420px); }
+}

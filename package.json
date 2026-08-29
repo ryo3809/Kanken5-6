@@ -15,8 +15,10 @@
     "preview": "vite preview --host",
     "typecheck": "tsc --noEmit",
     "test:logic": "node --experimental-strip-types --no-warnings scripts/test/logic-test.mts",
-    "test:browser": "npm run build && node scripts/test/browser-test.mjs",
-    "test": "npm run test:logic && npm run test:browser"
+    "test:browser": "node scripts/test/browser-test.mjs",
+    "test": "npm run test:logic && npm run test:tracing && npm run build && npm run test:browser && npm run test:browser-tracing",
+    "test:tracing": "node --experimental-strip-types --no-warnings scripts/test/tracing-test.mts",
+    "test:browser-tracing": "node scripts/test/tracing-browser-test.mjs"
   },
   "dependencies": {
     "idb": "^8.0.3",

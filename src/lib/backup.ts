@@ -3,7 +3,7 @@
 // iOS Safari には「ホーム画面に追加していないサイトのデータを7日間で消す」仕組みがあります。
 // この機能が無いと、消えたときに取り返しがつきません。だから最初から作ってあります。
 
-import type { BackupFile, Progress, SessionRecord, Settings } from './types';
+import type { BackupFile, Progress, SessionRecord, Settings, TraceRecord } from './types';
 import { DEFAULT_SETTINGS } from './types';
 import { exportAll, importAll } from './db';
 
@@ -74,16 +74,33 @@ export function validateBackup(raw: unknown): BackupFile {
       typeof s.total === 'number' &&
       typeof s.correct === 'number',
   );
+  // なぞり書きの記録は、古いバックアップには入っていないので無くてもよい
+  const traces: TraceRecord[] = Array.isArray(o.traces)
+    ? o.traces.filter(
+        (t): t is TraceRecord =>
+          !!t && typeof t.c === 'string' && t.c.length === 1 && typeof t.times === 'number',
+      )
+    : [];
   const settings: Settings = { ...DEFAULT_SETTINGS, ...(o.settings ?? {}) };
 
   if (progress.length === 0 && sessions.length === 0) {
     throw new Error('バックアップの中に、読みこめる記録がありませんでした。');
   }
-  return { app: 'kanken-5-6', version: 1, exportedAt: o.exportedAt ?? '', progress, sessions, settings };
+  return {
+    app: 'kanken-5-6',
+    version: 1,
+    exportedAt: o.exportedAt ?? '',
+    progress,
+    sessions,
+    traces,
+    settings,
+  };
 }
 
 /** ファイルを読みこんで復元する。件数を返す */
-export async function restoreFromFile(file: File): Promise<{ progress: number; sessions: number }> {
+export async function restoreFromFile(
+  file: File,
+): Promise<{ progress: number; sessions: number; traces: number }> {
   let text: string;
   try {
     text = await file.text();
@@ -97,6 +114,15 @@ export async function restoreFromFile(file: File): Promise<{ progress: number; s
     throw new Error('ファイルの中身がこわれているようです。別のバックアップを選んでください。');
   }
   const data = validateBackup(raw);
-  await importAll({ progress: data.progress, sessions: data.sessions, settings: data.settings });
-  return { progress: data.progress.length, sessions: data.sessions.length };
+  await importAll({
+    progress: data.progress,
+    sessions: data.sessions,
+    traces: data.traces,
+    settings: data.settings,
+  });
+  return {
+    progress: data.progress.length,
+    sessions: data.sessions.length,
+    traces: data.traces?.length ?? 0,
+  };
 }

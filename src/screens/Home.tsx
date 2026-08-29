@@ -17,6 +17,9 @@ interface Props {
   /** 校正まちで、まだ出題できない漢字の数 */
   blockedCount: number;
   onStart: () => void;
+  onStartTracing: () => void;
+  /** なぞり書きをしたことのある漢字の数 */
+  tracedCount: number;
   onOpenSettings: () => void;
   onOpenBackup: () => void;
   onDismissInstallHint: () => void;
@@ -113,6 +116,21 @@ export function Home(props: Props) {
         {todayAnswered > 0 && (
           <p className="muted center" style={{ marginTop: 12, marginBottom: 0 }}>
             きょうは ここまでに {todayAnswered}もん といたよ
+          </p>
+        )}
+      </div>
+
+      <div className="card">
+        <h2>なぞりがき</h2>
+        <p className="muted">
+          おてほんの うえを なぞって、かきじゅんを おぼえます。3字ずつです。
+        </p>
+        <button className="wide" onClick={props.onStartTracing}>
+          ✏️ なぞりがきを する
+        </button>
+        {props.tracedCount > 0 && (
+          <p className="muted center" style={{ marginTop: 10, marginBottom: 0 }}>
+            これまでに {props.tracedCount}字 なぞったよ
           </p>
         )}
       </div>
