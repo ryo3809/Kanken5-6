@@ -153,13 +153,53 @@ console.log('\n▶ テスト3b　承認していない熟語が出題されな�
   );
   check('確認まちの熟語は出題データに入っていない', inIndex.length === 0,
     inIndex.map((w) => w.w).join('、'));
-  const approvedNow = ['小皿', '大皿', '新潟', '熊本', '小熊', '宮崎', '長崎', '川崎', '山梨', '梨花', '受賞', '大賞', '賞賛'];
-  const missing = approvedNow.filter((w) => !words.find((x) => x.w === w && x.verified));
-  check('保護者が承認した13語は出題される', missing.length === 0,
-    missing.length ? '出ていない：' + missing.join('、') : '13語すべて出題できる');
+  // 保護者が「入れて」と指示した6字が、6級で出題できるようになっているか
+  const asked = [...'皿潟熊崎梨賞'];
+  const noWord = asked.filter((c) => !words.some((w) => w.verified && w.lv === 6 && w.w.includes(c)));
+  check('保護者の指示どおり 皿・潟・熊・崎・梨・賞 が6級で出題できる', noWord.length === 0,
+    noWord.length ? '出せない：' + noWord.join('') : '6字すべて出題できる');
   const blocked6 = c6.filter((c) => !(idx6.get(c)?.length));
   check('6級は835字ぜんぶ出題できる', blocked6.length === 0,
     blocked6.length ? '出せない：' + blocked6.join('') : '835字すべてOK');
+}
+
+console.log('\n▶ テスト3c　フェーズ1bで足したデータ');
+{
+  const pairs = JSON.parse(readFileSync('src/data/pairs.json', 'utf8')).pairs as {
+    kind: string; a: string; b: string; ra: string; rb: string; lv: number; verified: boolean;
+  }[];
+  const kozo = JSON.parse(readFileSync('src/data/kozo.json', 'utf8')).kozo as {
+    w: string; r: string; type: string; lv: number; verified: boolean;
+  }[];
+  const wmap = new Map(words.map((w) => [w.w, w]));
+
+  check('部首が全1026字についている', kanji.every((k) => !!k.radical && !!k.radicalName),
+    `部首なし ${kanji.filter((k) => !k.radical).length}字`);
+  check('部首名がひらがなになっている',
+    kanji.every((k) => !k.radicalName || /^[ぁ-ゖー]+$/.test(k.radicalName)),
+    kanji.filter((k) => k.radicalName && !/^[ぁ-ゖー]+$/.test(k.radicalName)).slice(0, 5)
+      .map((k) => `${k.c}=${k.radicalName}`).join(' ') || 'すべてひらがな');
+  const radOk = kanji.filter((k) => k.radicalVerified).length;
+  check('部首の1000字以上が出題できる', radOk >= 1000, `${radOk}字`);
+
+  check('対義語・類義語の語がすべて出典データにある',
+    pairs.every((p) => wmap.get(p.a)?.verified && wmap.get(p.b)?.verified), `${pairs.length}組`);
+  check('熟語の構成の語がすべて出典データにある',
+    kozo.every((k) => wmap.get(k.w)?.verified), `${kozo.length}語`);
+  check('熟語の構成がア〜エの4種類そろっている',
+    ['ア', 'イ', 'ウ', 'エ'].every((t) => kozo.filter((k) => k.type === t).length >= 20),
+    ['ア', 'イ', 'ウ', 'エ'].map((t) => `${t}${kozo.filter((k) => k.type === t).length}`).join(' '));
+  check('確認が済むまで対義語は出題されない',
+    pairs.filter((p) => p.verified).length === 0 || pairs.every((p) => p.verified),
+    `出題できる ${pairs.filter((p) => p.verified).length}/${pairs.length}組`);
+
+  const w3 = words.filter((w) => w.n === 3 && w.verified);
+  const w4 = words.filter((w) => (w as { yoji?: boolean }).yoji && w.verified);
+  check('三字熟語が100語以上ある', w3.length >= 100, `${w3.length}語`);
+  check('四字熟語が100語以上ある', w4.length >= 100, `${w4.length}語`);
+  check('四字熟語がすべて4字である', w4.every((w) => [...w.w].length === 4));
+  console.log('    三字熟語の例:', w3.slice(0, 6).map((w) => w.w).join(' '));
+  console.log('    四字熟語の例:', w4.slice(0, 6).map((w) => w.w).join(' '));
 }
 
 console.log('\n▶ テスト4　復習の間隔（Leitner）');

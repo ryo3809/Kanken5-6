@@ -13,7 +13,7 @@
 import { readFile, writeFile, rename } from 'node:fs/promises';
 import path from 'node:path';
 import { log, runScript, ensureDir, FriendlyError } from './lib/util.mjs';
-import { refreshApprovals, APPROVAL_FILE } from './lib/approvals.mjs';
+import { refreshApprovals, APPROVAL_FILES } from './lib/approvals.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const DATA = path.join(ROOT, 'src/data');
@@ -110,13 +110,49 @@ runScript('CSVの書き出し', async () => {
   log.ok(`2-熟語一覧.csv（${n2}行）`);
 
   log.step('3/4 承認ファイルの更新');
-  // 出どころがはっきりしない熟語を、承認ファイルに書き出す。
+  // 出どころがはっきりしないものを、種類ごとの承認ファイルに書き出す。
   // すでに「OK」と書かれているものは、絶対に上書きしません。
-  const pending = words.filter((w) => w.src.includes('要校正') || !w.verified);
-  const res = await refreshApprovals(ROOT, pending);
-  log.ok(`${APPROVAL_FILE}（${res.total}行／承認ずみ ${res.approved}行）`);
-  log.info('確認が必要な熟語は、このファイルの「承認」の列に OK と書いてください。');
-  log.info('書いたあと npm run data:build を実行すると、アプリに出るようになります。');
+  const { pairs } = await readJson(path.join(DATA, 'pairs.json'));
+  const { kozo } = await readJson(path.join(DATA, 'kozo.json'));
+
+  const r1 = await refreshApprovals(
+    ROOT, 'word',
+    words.filter((w) => w.src.includes('要校正') || !w.verified)
+      .map((w) => [w.w, w.r, w.lv === 6 ? '6級から' : '5級から', w.src.replace('｜要校正', '')]),
+  );
+  const r2 = await refreshApprovals(
+    ROOT, 'radical',
+    kanji.filter((k) => !k.radicalVerified)
+      .map((k) => [k.c, k.radical ?? '', k.radicalName ?? '', k.radicalSource ?? '',
+        k.radical ? 'ほかの出典と照合できなかった' : '出どころが見つからない']),
+  );
+  const KOZO_MEAN = {
+    ア: '反対や対になる意味の字を組み合わせたもの',
+    イ: '同じような意味の字を組み合わせたもの',
+    ウ: '上の字が下の字の意味を説明（修飾）しているもの',
+    エ: '下の字から上の字へ返って読むと意味がよくわかるもの',
+  };
+  const r3 = await refreshApprovals(
+    ROOT, 'pair',
+    pairs.map((p) => [
+      p.kind === 'tai' ? '対義語' : '類義語',
+      p.a, p.b, p.ra, p.rb, p.lv === 6 ? '6級から' : '5級から',
+    ]),
+  );
+  const r4 = await refreshApprovals(
+    ROOT, 'kozo',
+    kozo.map((k) => [k.w, k.r, k.type, KOZO_MEAN[k.type], k.lv === 6 ? '6級から' : '5級から']),
+  );
+
+  for (const [label, res, file] of [
+    ['熟語の読み', r1, APPROVAL_FILES.word],
+    ['部首', r2, APPROVAL_FILES.radical],
+    ['対義語・類義語', r3, APPROVAL_FILES.pair],
+    ['熟語の構成', r4, APPROVAL_FILES.kozo],
+  ]) {
+    log.ok(`${file}（${res.total}行／承認ずみ ${res.approved}行）… ${label}`);
+  }
+  log.info('「承認」の列に OK と書いて、npm run data:build を実行すると出題されるようになります。');
 
   log.step('4/4 部首の校正シート（フェーズ1bの作業）');
   const radRows = kanji.map((k) => [
@@ -143,7 +179,7 @@ runScript('CSVの書き出し', async () => {
   console.log('');
   console.log('  1-漢字一覧.csv        … 1026字ぜんぶ。ざっと眺めて、変な読みが無いか見てください');
   console.log('  2-熟語一覧.csv        … 出題に使う熟語ぜんぶ。よく使う順にならんでいます');
-  console.log('  （承認ファイルは data/word-approvals.csv です）');
+  console.log('  （承認ファイルは data/approvals/ にあります）');
   console.log('  4-部首の校正シート.csv … フェーズ1bで使います。いまは見なくて大丈夫です');
   console.log('');
 });

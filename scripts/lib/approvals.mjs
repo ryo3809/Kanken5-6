@@ -5,12 +5,34 @@
 //   読みが後から変わった場合は承認が外れる作りにしてあります
 //   （承認したときの読みと、いまの読みが違ったら、もう一度確認してもらうため）。
 
-import { readFile, writeFile, rename } from 'node:fs/promises';
+import { readFile, writeFile, rename, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 
-export const APPROVAL_FILE = 'data/word-approvals.csv';
+/** 種類ごとの承認ファイル */
+export const APPROVAL_FILES = {
+  word: 'data/approvals/1-熟語の読み.csv',
+  radical: 'data/approvals/2-部首.csv',
+  pair: 'data/approvals/3-対義語・類義語.csv',
+  kozo: 'data/approvals/4-熟語の構成.csv',
+};
+/** 以前のファイル（引っこしのために読む） */
+export const OLD_APPROVAL_FILE = 'data/word-approvals.csv';
 
-const HEADER = ['熟語', '読み', '出題級', '出どころ', '承認', '確認日', 'メモ'];
+const HEADERS = {
+  word: ['熟語', '読み', '出題級', '出どころ', '承認', '確認日', 'メモ'],
+  radical: ['漢字', '部首', '部首名', '出どころ', 'なぜ確認が必要か', '承認', '確認日', 'メモ'],
+  pair: ['種類', 'ことばA', 'ことばB', '読みA', '読みB', '出題級', '承認', '確認日', 'メモ'],
+  kozo: ['熟語', '読み', '構成', '意味', '出題級', '承認', '確認日', 'メモ'],
+};
+/** 承認の「キー」を作る（この値が変わったら、承認はやり直しになる） */
+const KEYS = {
+  word: (r) => `${r[0]}|${r[1]}`,
+  radical: (r) => `${r[0]}|${r[1]}`,
+  pair: (r) => `${r[1]}|${r[2]}`,
+  kozo: (r) => `${r[0]}|${r[2]}`,
+};
+/** 承認・確認日・メモが、それぞれ何列目か */
+const APPROVAL_COL = { word: 4, radical: 5, pair: 6, kozo: 5 };
 
 /** CSVの1行を分解する（"" で囲まれた値に対応） */
 function parseLine(line) {
@@ -38,24 +60,34 @@ const cell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
  * 承認ファイルを読む。
  * 返すのは「熟語＋読み」→ 承認情報 のMap。ファイルが無ければ空。
  */
-export async function loadApprovals(root) {
-  let text;
+export async function loadApprovals(root, kind = 'word') {
+  const file = APPROVAL_FILES[kind];
+  let text = null;
   try {
-    text = await readFile(path.join(root, APPROVAL_FILE), 'utf8');
+    text = await readFile(path.join(root, file), 'utf8');
   } catch {
-    return new Map(); // まだ作られていないだけなので、空でよい
+    // 新しい場所に無ければ、以前の場所を見る（引っこしのため）
+    if (kind === 'word') {
+      try {
+        text = await readFile(path.join(root, OLD_APPROVAL_FILE), 'utf8');
+      } catch { /* まだ作られていないだけ */ }
+    }
   }
+  if (text === null) return new Map();
+
+  const col = APPROVAL_COL[kind];
   const map = new Map();
-  const lines = text.replace(/^﻿/, '').split(/\r?\n/);
-  for (const line of lines.slice(1)) {
+  for (const line of text.replace(/^﻿/, '').split(/\r?\n/).slice(1)) {
     if (!line.trim()) continue;
-    const [word, reading, lv, src, approval, date, memo] = parseLine(line);
-    if (!word) continue;
-    map.set(`${word}|${reading}`, {
-      word, reading, lv, src,
-      approved: String(approval ?? '').trim().toUpperCase() === 'OK',
-      raw: String(approval ?? '').trim(),
-      date, memo,
+    const cells = parseLine(line);
+    if (!cells[0]) continue;
+    const raw = String(cells[col] ?? '').trim();
+    map.set(KEYS[kind](cells), {
+      cells,
+      approved: raw.toUpperCase() === 'OK',
+      raw,
+      date: cells[col + 1] ?? '',
+      memo: cells[col + 2] ?? '',
     });
   }
   return map;
@@ -66,36 +98,44 @@ export async function loadApprovals(root) {
  * すでに書かれている「承認」「確認日」「メモ」は絶対に消さない。
  * 新しく確認が必要になった熟語だけを足す。
  */
-export async function refreshApprovals(root, pendingWords) {
-  const existing = await loadApprovals(root);
+/**
+ * 承認ファイルを作りなおす。
+ * すでに書かれている「承認」「確認日」「メモ」は絶対に消さない。
+ *
+ * @param root  プロジェクトの場所
+ * @param kind  種類（word / radical / pair / kozo）
+ * @param items 確認が必要なものの一覧。1件が1行ぶんの配列（承認より前の列まで）
+ */
+export async function refreshApprovals(root, kind, items) {
+  const existing = await loadApprovals(root, kind);
+  const col = APPROVAL_COL[kind];
   const rows = [];
   const seen = new Set();
 
-  // 今回あらためて確認が必要な熟語
-  for (const w of pendingWords) {
-    const key = `${w.w}|${w.r}`;
+  for (const head of items) {
+    const key = KEYS[kind](head);
     seen.add(key);
     const prev = existing.get(key);
-    rows.push([
-      w.w, w.r,
-      w.lv === 6 ? '6級から' : '5級から',
-      w.src.replace('｜要校正', ''),
-      prev?.raw ?? '',
-      prev?.date ?? '',
-      prev?.memo ?? '',
-    ]);
+    rows.push([...head, prev?.raw ?? '', prev?.date ?? '', prev?.memo ?? '']);
   }
-  // 以前あったが、いまは出てこない熟語も記録として残す（勝手に消さない）
+  // 以前あったが、いまは出てこないものも記録として残す（勝手に消さない）
   for (const [key, prev] of existing) {
     if (seen.has(key)) continue;
-    rows.push([prev.word, prev.reading, prev.lv ?? '', prev.src ?? '', prev.raw, prev.date ?? '',
-      `${prev.memo ?? ''}${prev.memo ? ' / ' : ''}※いまのデータには出てきません`]);
+    const head = prev.cells.slice(0, col);
+    rows.push([
+      ...head, prev.raw, prev.date ?? '',
+      `${prev.memo ?? ''}${prev.memo ? ' / ' : ''}※いまのデータには出てきません`,
+    ]);
   }
 
   rows.sort((a, b) => String(a[0]).localeCompare(String(b[0]), 'ja'));
-  const body = [HEADER, ...rows].map((r) => r.map(cell).join(',')).join('\r\n');
-  const file = path.join(root, APPROVAL_FILE);
+  const body = [HEADERS[kind], ...rows].map((r) => r.map(cell).join(',')).join('\r\n');
+  const file = path.join(root, APPROVAL_FILES[kind]);
+  await mkdir(path.dirname(file), { recursive: true });
   await writeFile(`${file}.tmp`, `﻿${body}\r\n`, 'utf8');
   await rename(`${file}.tmp`, file);
-  return { total: rows.length, approved: rows.filter((r) => String(r[4]).toUpperCase() === 'OK').length };
+  return {
+    total: rows.length,
+    approved: rows.filter((r) => String(r[col]).toUpperCase() === 'OK').length,
+  };
 }

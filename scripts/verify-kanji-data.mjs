@@ -42,8 +42,11 @@ runScript('データの検証', async () => {
   console.log('漢検アプリ｜漢字データの検証');
   console.log('='.repeat(60));
 
-  const { meta, kanji } = await readJson(path.join(DATA, 'kanji.json'), '先に npm run data:build を実行してください。');
-  const { words } = await readJson(path.join(DATA, 'words.json'), '先に npm run data:build を実行してください。');
+  const hint = '先に npm run data:build を実行してください。';
+  const { meta, kanji } = await readJson(path.join(DATA, 'kanji.json'), hint);
+  const { words } = await readJson(path.join(DATA, 'words.json'), hint);
+  const { pairs } = await readJson(path.join(DATA, 'pairs.json'), hint);
+  const { kozo } = await readJson(path.join(DATA, 'kozo.json'), hint);
   const byChar = new Map(kanji.map((k) => [k.c, k]));
 
   // ── 検証1：学年ごとの字数が公式と一致するか ───────────────────
@@ -224,15 +227,94 @@ runScript('データの検証', async () => {
   must('出典が記録されている', hasSources);
   must('KanjiVG のライセンス表記がある', hasLicenses);
 
-  // ── 検証9：まだ校正できていないデータ ────────────────────────
-  log.step('検証9　人の校正がまだのデータ（フェーズ1bの作業リスト）');
+  // ── 検証9：部首 ──────────────────────────────────────────
+  log.step('検証9　部首');
   const radNone = kanji.filter((k) => !k.radical).length;
-  const radUnverified = kanji.filter((k) => !k.radicalVerified).length;
-  log.warn(`部首：候補あり ${kanji.length - radNone}字 / 候補なし ${radNone}字 → 校正済み 0字`);
-  log.info('※ 部首は KanjiVG からの推定です。漢検の部首と違う場合があるので、');
-  log.info('   校正が終わるまで部首の問題は出題されません（radicalVerified が false のため）。');
-  should('部首がすべて校正済み', radUnverified === 0, `未校正 ${radUnverified}字`);
-  log.warn('対義語・類義語／四字熟語／三字熟語／熟語の構成／誤字訂正：まだデータがありません（フェーズ1b）');
+  const radOk = kanji.filter((k) => k.radicalVerified).length;
+  log[radNone === 0 ? 'ok' : 'ng'](
+    radNone === 0 ? '全1026字に部首がついている' : `部首が無い字：${radNone}字`,
+  );
+  must('全字に部首がついている', radNone === 0);
+  const badName = kanji.filter((k) => k.radical && !k.radicalName);
+  log[badName.length === 0 ? 'ok' : 'ng'](
+    badName.length === 0 ? '全字に部首名がついている' : `部首名が無い字：${badName.map((k) => k.c).join('')}`,
+  );
+  must('全字に部首名がついている', badName.length === 0);
+  log[radOk === kanji.length ? 'ok' : 'warn'](
+    `出題できる部首：${radOk}字（確認まち ${kanji.length - radOk}字）`,
+  );
+  log.info('※ 部首は KANJIDIC2（康熙214部首）が出どころ、名前は『漢検漢字辞典』の部首一覧です。');
+  log.info('   漢検の部首分類と一致しない字がある可能性は残ります。');
+  should('部首がすべて確認ずみ', radOk === kanji.length, `確認まち ${kanji.length - radOk}字`);
+
+  // ── 検証10：対義語・類義語／熟語の構成 ──────────────────
+  log.step('検証10　対義語・類義語と、熟語の構成');
+  const wordSet = new Map(words.map((w) => [w.w, w]));
+  const pairBad = pairs.filter((p) => !wordSet.get(p.a)?.verified || !wordSet.get(p.b)?.verified);
+  log[pairBad.length === 0 ? 'ok' : 'ng'](
+    pairBad.length === 0
+      ? `対義語・類義語 ${pairs.length}組：使っている語はすべて出典データにある`
+      : `出典データに無い語を使っている組：${pairBad.map((p) => `${p.a}-${p.b}`).join('、')}`,
+  );
+  must('対義語・類義語が出典データの語だけでできている', pairBad.length === 0);
+
+  const pairSame = pairs.filter((p) => p.a === p.b);
+  log[pairSame.length === 0 ? 'ok' : 'ng'](pairSame.length === 0 ? '同じ語どうしの組はない' : `同じ語：${pairSame.length}組`);
+  must('同じ語どうしの組がない', pairSame.length === 0);
+
+  const pairLv = pairs.filter((p) => {
+    const a = wordSet.get(p.a);
+    const b = wordSet.get(p.b);
+    return p.lv === 6 && (a?.lv !== 6 || b?.lv !== 6);
+  });
+  log[pairLv.length === 0 ? 'ok' : 'ng'](
+    pairLv.length === 0 ? '6級の組は6級の語だけでできている' : `級ちがい：${pairLv.length}組`,
+  );
+  must('6級の対義語が6級の範囲に収まっている', pairLv.length === 0);
+
+  const kozoBad = kozo.filter((k) => !wordSet.get(k.w)?.verified);
+  log[kozoBad.length === 0 ? 'ok' : 'ng'](
+    kozoBad.length === 0
+      ? `熟語の構成 ${kozo.length}語：使っている語はすべて出典データにある`
+      : `出典データに無い語：${kozoBad.map((k) => k.w).join('、')}`,
+  );
+  must('熟語の構成が出典データの語だけでできている', kozoBad.length === 0);
+
+  const kozoType = kozo.filter((k) => !['ア', 'イ', 'ウ', 'エ'].includes(k.type));
+  log[kozoType.length === 0 ? 'ok' : 'ng'](kozoType.length === 0 ? '構成はすべて ア〜エ のどれか' : `おかしい構成：${kozoType.length}件`);
+  must('熟語の構成がア〜エのどれかになっている', kozoType.length === 0);
+
+  const kozoDup = kozo.map((k) => k.w).filter((w, i, a) => a.indexOf(w) !== i);
+  log[kozoDup.length === 0 ? 'ok' : 'ng'](
+    kozoDup.length === 0 ? '同じ熟語が2つの構成に入っていない' : `重複：${kozoDup.join('、')}`,
+  );
+  must('同じ熟語が2つの構成に入っていない', kozoDup.length === 0);
+
+  const byType = {};
+  for (const k of kozo) byType[k.type] = (byType[k.type] ?? 0) + 1;
+  log.ok(`構成のうちわけ：${Object.entries(byType).map(([t, n]) => `${t}${n}語`).join(' / ')}`);
+  const kozoOk = kozo.filter((k) => k.verified).length;
+  const pairOk = pairs.filter((p) => p.verified).length;
+  log[pairOk === pairs.length ? 'ok' : 'warn'](`出題できる対義語・類義語：${pairOk}/${pairs.length}組`);
+  log[kozoOk === kozo.length ? 'ok' : 'warn'](`出題できる熟語の構成：${kozoOk}/${kozo.length}語`);
+  should('対義語・類義語がすべて確認ずみ', pairOk === pairs.length, `確認まち ${pairs.length - pairOk}組`);
+  should('熟語の構成がすべて確認ずみ', kozoOk === kozo.length, `確認まち ${kozo.length - kozoOk}語`);
+
+  // ── 検証11：三字熟語・四字熟語 ──────────────────────────
+  log.step('検証11　三字熟語・四字熟語');
+  const w3 = words.filter((w) => w.n === 3 && w.verified);
+  const w4 = words.filter((w) => w.yoji && w.verified);
+  log.ok(`三字熟語 ${w3.length}語（6級で使える ${w3.filter((w) => w.lv === 6).length}語）`);
+  log.ok(`四字熟語 ${w4.length}語（6級で使える ${w4.filter((w) => w.lv === 6).length}語）`);
+  should('三字熟語が100語以上ある', w3.length >= 100, `${w3.length}語`);
+  should('四字熟語が100語以上ある', w4.length >= 100, `${w4.length}語`);
+  // 会社名・新聞社名・大学名などが混ざっていないか。
+  // 「新聞紙」はふつうの三字熟語なので、○○新聞（新聞で終わる語）だけを見る。
+  const proper = w3.filter((w) => /(新聞|大学|銀行|会社|商事|工業|放送)$/.test(w.w));
+  log[proper.length === 0 ? 'ok' : 'ng'](
+    proper.length === 0 ? '三字熟語に会社名・学校名が混ざっていない' : `混入のうたがい：${proper.map((w) => w.w).join('、')}`,
+  );
+  must('三字熟語に会社名・学校名が混ざっていない', proper.length === 0, proper.map((w) => w.w));
 
   // ── まとめ ───────────────────────────────────────────────────
   console.log(`\n${'='.repeat(60)}`);
@@ -242,7 +324,7 @@ runScript('データの検証', async () => {
   const shouldNg = shouldList.filter((r) => !r.ok);
 
   console.log(`【必須】${mustList.length - mustNg.length}/${mustList.length} 合格`);
-  console.log(`【要対応】${shouldList.length - shouldNg.length}/${shouldList.length} 合格（残りはフェーズ1bで対応）`);
+  console.log(`【要対応】${shouldList.length - shouldNg.length}/${shouldList.length} 合格（残りは保護者の確認まち）`);
   if (shouldNg.length) {
     console.log('\n  人の作業が必要なもの:');
     for (const r of shouldNg) console.log(`   ・${r.name}`);

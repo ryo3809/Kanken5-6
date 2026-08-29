@@ -48,6 +48,35 @@ export const SOURCES = [
     //       画数の照合にだけ使う。
   },
   {
+    id: 'jmdict',
+    file: 'jmdict.json.tgz',
+    url: 'https://github.com/scriptin/jmdict-simplified/releases/download/3.6.2%2B20260824122934/jmdict-eng-3.6.2%2B20260824122934.json.tgz',
+    what: '国語辞典の見出し語と分類（四字熟語かどうか・固有名詞かどうか）',
+    origin: 'JMdict（電子辞書研究開発グループ EDRDG）／ jmdict-simplified',
+  },
+  {
+    id: 'kanjidic2',
+    file: 'kanjidic2.json.tgz',
+    url: 'https://github.com/scriptin/jmdict-simplified/releases/download/3.6.2%2B20260824122934/kanjidic2-en-3.6.2%2B20260824122934.json.tgz',
+    what: '漢字の部首（康熙214部首の番号）',
+    origin: 'KANJIDIC2（電子辞書研究開発グループ EDRDG）／ jmdict-simplified',
+    // .tgz のまま保存し、使うときに展開します（scripts/lib/untar.mjs）
+  },
+  {
+    id: 'bushu',
+    file: 'bushu-list.csv',
+    url: 'https://raw.githubusercontent.com/mimneko/kanji-data/main/%E9%83%A8%E9%A6%96%E4%B8%80%E8%A6%A7.csv',
+    what: '部首214種類の名称（のぎへん・さんずい など）',
+    origin: '『漢検漢字辞典』にもとづく部首分類',
+  },
+  {
+    id: 'kanken-jiten',
+    file: 'kanken-jiten.csv',
+    url: 'https://raw.githubusercontent.com/mimneko/kanji-data/main/%E6%BC%A2%E6%A4%9C%E6%BC%A2%E5%AD%97%E8%BE%9E%E5%85%B8%E6%BC%A2%E5%AD%97.csv',
+    what: '漢字ごとの漢検級（こちらの級わりあてが正しいか確かめるために使う）',
+    origin: '『漢検漢字辞典』／漢字ペディア',
+  },
+  {
     id: 'frequency',
     file: 'japanese-frequency.txt',
     url: 'https://raw.githubusercontent.com/hingston/japanese/master/44998-japanese-words.txt',
@@ -60,6 +89,13 @@ export const SOURCES = [
 export const KANJIVG_BASE = 'https://raw.githubusercontent.com/KanjiVG/kanjivg/master/kanji';
 
 export const LICENSES = [
+  {
+    name: 'KANJIDIC2',
+    url: 'http://www.edrdg.org/wiki/index.php/KANJIDIC_Project',
+    license: 'Creative Commons 表示-継承 4.0 (CC BY-SA 4.0) ／ EDRDG',
+    used: '漢字の部首',
+    note: 'KANJIDIC2は電子辞書研究開発グループ(EDRDG)の所有物です',
+  },
   {
     name: '日本語頻度リスト（Leeds Corpus）',
     url: 'http://corpus.leeds.ac.uk/frqc/internet-jp.num',
