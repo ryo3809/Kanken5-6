@@ -1,0 +1,211 @@
+/* ───────────────────────────────────────────────
+   iPad で使うための基本設定
+   ─────────────────────────────────────────────── */
+
+:root {
+  --bg: #faf7f0;
+  --card: #ffffff;
+  --ink: #33302b;
+  --ink-soft: #6b655c;
+  --line: #e5ded1;
+  --accent: #e8883a;      /* 柴犬の毛色 */
+  --accent-dark: #c26a24;
+  --ok: #4a9d5f;
+  --ok-bg: #eaf6ec;
+  --ng: #d2694a;
+  --ng-bg: #fbeee9;
+  --radius: 16px;
+  --tap: 56px;            /* 指で押しやすい最小の大きさ */
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic",
+    "Noto Sans JP", system-ui, sans-serif;
+  font-size: 17px;
+  line-height: 1.7;
+  /* 画面全体が上下にゆれる動き（ゴムバンドスクロール）を止める */
+  overscroll-behavior: none;
+  /* 文字が勝手に大きくならないようにする */
+  -webkit-text-size-adjust: 100%;
+  /* ダブルタップでの拡大を止める。書いている最中に拡大されると使えないため */
+  touch-action: manipulation;
+}
+
+/* 長押しでメニューが出たり、文字が選択されたりしないようにする。
+   ただし答えを入力する欄では選択できるようにする（下で戻している） */
+body {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+input, textarea { -webkit-user-select: text; user-select: text; }
+
+/* ───── 全体のわく ───── */
+
+.app {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: max(16px, env(safe-area-inset-top)) 16px
+           max(24px, env(safe-area-inset-bottom)) 16px;
+  min-height: 100%;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+h1 { font-size: 22px; margin: 0 0 4px; }
+h2 { font-size: 19px; margin: 0 0 12px; }
+p  { margin: 0 0 12px; }
+.muted { color: var(--ink-soft); font-size: 15px; }
+.center { text-align: center; }
+
+/* ───── ボタン ───── */
+
+button {
+  font-family: inherit;
+  font-size: 17px;
+  min-height: var(--tap);
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink);
+  padding: 12px 20px;
+  cursor: pointer;
+  /* タップしたときの青い光を消す */
+  -webkit-tap-highlight-color: transparent;
+}
+button:active { transform: scale(0.985); }
+button:disabled { opacity: 0.45; cursor: default; }
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent-dark);
+  color: #fff;
+  font-weight: 700;
+  font-size: 19px;
+  min-height: 64px;
+  width: 100%;
+}
+button.ghost { background: transparent; border-color: transparent; color: var(--ink-soft); }
+button.wide { width: 100%; }
+button.danger { border-color: var(--ng); color: var(--ng); }
+
+.row { display: flex; gap: 10px; flex-wrap: wrap; }
+.row > * { flex: 1 1 auto; }
+
+/* ───── 問題の画面 ───── */
+
+.progressbar {
+  height: 8px;
+  background: var(--line);
+  border-radius: 99px;
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+.progressbar > div {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.25s ease;
+}
+
+.word {
+  font-size: clamp(64px, 18vw, 108px);
+  line-height: 1.25;
+  text-align: center;
+  letter-spacing: 0.06em;
+  margin: 12px 0 4px;
+  font-weight: 500;
+}
+
+.choices { display: grid; gap: 12px; }
+.choices button {
+  width: 100%;
+  min-height: 64px;
+  font-size: 22px;
+}
+/* 答え合わせのあとはボタンを押せなくするが、
+   正解・不正解の印だけは、はっきり読めるようにする（薄くしない） */
+.choices button.correct,
+.choices button.wrong { opacity: 1; }
+.choices button.correct {
+  background: var(--ok-bg);
+  border-color: var(--ok);
+  border-width: 2px;
+  color: #2f6b3d;
+  font-weight: 700;
+}
+.choices button.wrong {
+  background: var(--ng-bg);
+  border-color: var(--ng);
+  border-width: 2px;
+  color: #a4402a;
+  font-weight: 700;
+}
+/* 選ばれなかった選択肢は、じゃまにならないよう控えめにする */
+.choices button:disabled:not(.correct):not(.wrong) { opacity: 0.35; }
+
+.answerbox {
+  width: 100%;
+  min-height: var(--tap);
+  font-size: 26px;
+  text-align: center;
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  padding: 10px;
+  font-family: inherit;
+  background: #fff;
+  color: var(--ink);
+}
+.answerbox:focus { outline: none; border-color: var(--accent); }
+
+.verdict { text-align: center; font-size: 20px; font-weight: 700; margin: 16px 0 8px; }
+.verdict.ok { color: var(--ok); }
+.verdict.ng { color: var(--ng); }
+
+/* ───── そのほか ───── */
+
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; text-align: center; }
+.stat  { background: var(--bg); border-radius: 12px; padding: 12px 8px; }
+.stat b { display: block; font-size: 26px; line-height: 1.2; }
+.stat span { font-size: 13px; color: var(--ink-soft); }
+
+.notice {
+  background: #fff9e8;
+  border: 1px solid #e8d9a8;
+  border-radius: 12px;
+  padding: 14px 16px;
+  font-size: 15px;
+  margin-bottom: 16px;
+}
+.notice.bad { background: var(--ng-bg); border-color: var(--ng); }
+
+.boxbars { display: grid; gap: 6px; }
+.boxbar { display: grid; grid-template-columns: 52px 1fr 48px; align-items: center; gap: 8px; font-size: 14px; }
+.boxbar .track { height: 14px; background: var(--line); border-radius: 99px; overflow: hidden; }
+.boxbar .fill  { height: 100%; background: var(--accent); }
+
+label.field { display: block; margin-bottom: 16px; font-size: 15px; color: var(--ink-soft); }
+label.field > .control { margin-top: 6px; display: flex; gap: 8px; }
+label.field .control button { flex: 1; }
+label.field .control button[aria-pressed='true'] {
+  background: var(--accent); border-color: var(--accent-dark); color: #fff; font-weight: 700;
+}
+
+/* 目が見えにくい人・動きが苦手な人への配慮 */
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}

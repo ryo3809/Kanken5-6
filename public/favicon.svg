@@ -1,0 +1,22 @@
+<!-- しばまる（かんたん版）。フェーズ5できちんと描きます。丸だけで作ってあります。 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="しばまる">
+  <rect width="64" height="64" rx="14" fill="#faf7f0"/>
+  <!-- みみ -->
+  <path d="M16 22 L20 8 L30 18 Z" fill="#e8883a"/>
+  <path d="M48 22 L44 8 L34 18 Z" fill="#e8883a"/>
+  <!-- かお -->
+  <circle cx="32" cy="36" r="18" fill="#e8883a"/>
+  <!-- ほお -->
+  <circle cx="32" cy="42" r="12" fill="#fdf6ec"/>
+  <!-- め -->
+  <circle cx="25" cy="33" r="2.6" fill="#33302b"/>
+  <circle cx="39" cy="33" r="2.6" fill="#33302b"/>
+  <!-- まゆ -->
+  <circle cx="24" cy="26" r="2" fill="#fdf6ec"/>
+  <circle cx="40" cy="26" r="2" fill="#fdf6ec"/>
+  <!-- はな -->
+  <circle cx="32" cy="40" r="2.4" fill="#33302b"/>
+  <!-- くち -->
+  <path d="M32 42 Q28 47 25 43" stroke="#33302b" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+  <path d="M32 42 Q36 47 39 43" stroke="#33302b" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+</svg>

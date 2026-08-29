@@ -9,6 +9,26 @@
     "data:build": "node scripts/build-kanji-data.mjs",
     "data:verify": "node scripts/verify-kanji-data.mjs",
     "data:csv": "node scripts/export-csv.mjs",
-    "data:all": "npm run data:fetch && npm run data:build && npm run data:verify && npm run data:csv"
+    "data:all": "npm run data:fetch && npm run data:build && npm run data:verify && npm run data:csv",
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host",
+    "typecheck": "tsc --noEmit",
+    "test:logic": "node --experimental-strip-types --no-warnings scripts/test/logic-test.mts",
+    "test:browser": "npm run build && node scripts/test/browser-test.mjs",
+    "test": "npm run test:logic && npm run test:browser"
+  },
+  "dependencies": {
+    "idb": "^8.0.3",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "@vitejs/plugin-react": "^6.1.1",
+    "playwright": "^1.62.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2"
   }
 }

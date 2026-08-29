@@ -20,3 +20,6 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# テストで撮った画面の写真（毎回作りなおせる）
+data/screenshots/
