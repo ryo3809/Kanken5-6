@@ -23,7 +23,10 @@ for (let i = 0; i < 40; i++) {
 }
 
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
-const ctx = await browser.newContext({ ...devices['iPad (gen 7)'], locale: 'ja-JP' });
+// オフライン用のしくみは、このテストでは使わない（毎回まっさらな状態で試すため）
+const ctx = await browser.newContext({
+  ...devices['iPad (gen 7)'], locale: 'ja-JP', serviceWorkers: 'block',
+});
 const page = await ctx.newPage();
 const errors = [];
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });

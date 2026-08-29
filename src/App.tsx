@@ -7,7 +7,7 @@ import pairsData from './data/pairs.json';
 import kozoData from './data/kozo.json';
 import type {
   ExamResult, GameState, KanjiEntry, KozoEntry, PairEntry, Progress, Question, SelfGradeRecord,
-  Settings, TraceRecord, WordEntry,
+  SessionRecord, Settings, TraceRecord, WordEntry,
 } from './lib/types';
 import { DEFAULT_GAME, DEFAULT_SETTINGS } from './lib/types';
 import {
@@ -25,6 +25,7 @@ import { Session } from './screens/Session';
 import { Result } from './screens/Result';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { BackupScreen } from './screens/BackupScreen';
+import { AboutScreen } from './screens/AboutScreen';
 import { Tracing } from './screens/Tracing';
 import { Writing, type WritingResult } from './screens/Writing';
 import { preloadGrade } from './lib/strokeStore';
@@ -37,6 +38,7 @@ import { ExamScreen, autoScore, type ExamAnswer } from './screens/ExamScreen';
 import { ExamGrading } from './screens/ExamGrading';
 import { ExamResultScreen, passLine } from './screens/ExamResultScreen';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { applyUpdate, registerServiceWorker, snoozeUntil } from './lib/pwa';
 import { Shibamaru } from './character/Shibamaru';
 import { ITEM_BY_ID } from './character/items';
 
@@ -80,7 +82,7 @@ type Screen =
   | 'writing' | 'writingResult'
   | 'map' | 'zukan' | 'dressup'
   | 'examIntro' | 'exam' | 'examGrading' | 'examResult'
-  | 'settings' | 'backup';
+  | 'settings' | 'backup' | 'about';
 
 /** なぞり書き1回ぶんの字数 */
 const TRACE_SESSION_SIZE = 3;
@@ -97,6 +99,17 @@ export default function App() {
     setProgress(next);
   }, []);
   const [sessionDates, setSessionDates] = useState<string[]>([]);
+  /** 学習の記録そのもの（おうちの人の画面で、日ごとのようすを出すのに使う） */
+  const [sessionRecords, setSessionRecords] = useState<SessionRecord[]>([]);
+  /**
+   * 学習の記録を1件ふやす。
+   * 画面に出している一覧にも同時に足しておく
+   * （おうちの人の画面のグラフが、開きなおさなくても最新になるように）。
+   */
+  const recordSession = useCallback(async (rec: SessionRecord) => {
+    await addSession(rec);
+    setSessionRecords((r) => [...r, rec]);
+  }, []);
   const [traces, setTraces] = useState<Map<string, TraceRecord>>(new Map());
   const [traceQueue, setTraceQueue] = useState<KanjiEntry[]>([]);
   const [traceResult, setTraceResult] = useState<{ traced: string[]; retries: number } | null>(null);
@@ -125,6 +138,8 @@ export default function App() {
   const [storageOk, setStorageOk] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  /** 新しい版の用意ができたか（オフライン用のしくみが知らせてくれる） */
+  const [updateReady, setUpdateReady] = useState(false);
 
   const [questions, setQuestions] = useState<Question[]>([]);
   const [results, setResults] = useState<{ q: Question; correct: boolean }[]>([]);
@@ -145,6 +160,7 @@ export default function App() {
       setTraces(tr);
       setSelfGrades(sg);
       setGameBoth(gm);
+      setSessionRecords(sess);
       setSessionDates(sess.map((x) => x.date));
       setSessionCount(sess.length);
       const today = toDateKey();
@@ -166,6 +182,12 @@ export default function App() {
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  // オフラインでも開けるようにする。
+  // 登録に失敗してもアプリはふつうに動くので、ここでエラーは表示しない。
+  useEffect(() => {
+    registerServiceWorker(() => setUpdateReady(true));
+  }, []);
 
   // ── いまの級のデータ ─────────────────────────────
   const chars = useMemo(() => charsForKyu(ALL_KANJI, settings.kyu), [settings.kyu]);
@@ -260,7 +282,7 @@ export default function App() {
 
     try {
       await addExamResult(rec);
-      await addSession({
+      await recordSession({
         date: toDateKey(), startedAt: now - seconds * 1000, finishedAt: now,
         kyu: settings.kyu, mode: 'reading',
         total: exam.sections.reduce((n, s) => n + s.questions.length, 0),
@@ -378,7 +400,7 @@ export default function App() {
         items.push(next);
       }
       await saveTraces(items);
-      await addSession({
+      await recordSession({
         date: toDateKey(),
         startedAt: now,
         finishedAt: now,
@@ -452,7 +474,7 @@ export default function App() {
         date: today, at: now, c: r.q.answer, word: r.q.word, grade: r.grade,
       }));
       await addSelfGrades(grades);
-      await addSession({
+      await recordSession({
         date: today,
         startedAt,
         finishedAt: now,
@@ -509,7 +531,7 @@ export default function App() {
         .filter((p): p is Progress => !!p);
 
       await saveProgressBatch(toSave);
-      await addSession({
+      await recordSession({
         date: toDateKey(),
         startedAt,
         finishedAt: Date.now(),
@@ -563,6 +585,19 @@ export default function App() {
 
   return (
     <ErrorBoundary where={screen}>
+      {updateReady && screen === 'home' && (
+        <div className="app" style={{ paddingBottom: 0 }}>
+          <div className="notice">
+            <b>あたらしい バージョンが あります</b>
+            <br />
+            きろくは そのまま のこります。
+            <button className="ghost" style={{ marginTop: 8 }} onClick={applyUpdate}>
+              あたらしくする
+            </button>
+          </div>
+        </div>
+      )}
+
       {loadError && screen === 'home' && (
         <div className="app" style={{ paddingBottom: 0 }}>
           <div className="notice bad">{loadError}</div>
@@ -590,7 +625,9 @@ export default function App() {
           tracedCount={traces.size}
           onOpenSettings={() => setScreen('settings')}
           onOpenBackup={() => setScreen('backup')}
-          onDismissInstallHint={() => void changeSettings({ ...settings, dismissedInstallHint: true })}
+          onDismissInstallHint={() =>
+            void changeSettings({ ...settings, installHintHiddenUntil: snoozeUntil() })
+          }
         />
       )}
 
@@ -825,8 +862,17 @@ export default function App() {
           onDataChanged={() => void reload()}
           counts={{ progress: progress.size, sessions: sessionCount }}
           selfGrades={selfGrades}
+          exams={examHistory}
+          sessions={sessionRecords}
+          lastBackupAt={settings.lastBackupAt}
+          onBackupDone={() =>
+            void changeSettings({ ...settings, lastBackupAt: Date.now() })
+          }
+          onOpenAbout={() => setScreen('about')}
         />
       )}
+
+      {screen === 'about' && <AboutScreen onBack={() => setScreen('backup')} />}
     </ErrorBoundary>
   );
 }

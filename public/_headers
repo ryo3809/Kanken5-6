@@ -1,0 +1,27 @@
+# Cloudflare Pages に置いたときの、安全のための設定。
+# （このファイルは Cloudflare が読みます。アプリの動きには関係ありません）
+#
+# いちばん大事なのは Content-Security-Policy の行です。
+# 「このアプリは自分自身のファイル以外、どこにも通信してはいけない」と
+# ブラウザに命令しています。
+# 万一プログラムに間違いがあっても、学習の記録が外に送られることはありません。
+
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; media-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  X-Frame-Options: DENY
+  Permissions-Policy: geolocation=(), camera=(), microphone=(), payment=(), usb=(), interest-cohort=()
+  Cross-Origin-Opener-Policy: same-origin
+
+# 中身が変わったらファイル名も変わるので、長くためこんでよい
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# 入り口のページと、オフライン用のしくみは、毎回新しいか確かめる
+/
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+/sw.js
+  Cache-Control: no-cache

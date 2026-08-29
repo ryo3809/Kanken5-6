@@ -4,9 +4,11 @@
 // この画面が無いと、消えたときに取り返しがつきません。
 
 import { useMemo, useRef, useState } from 'react';
-import type { SelfGradeRecord } from '../lib/types';
+import type { ExamResult, SelfGradeRecord, SessionRecord } from '../lib/types';
 import { downloadBackup, restoreFromFile } from '../lib/backup';
 import { eraseAll } from '../lib/db';
+import { examSummary, recentDays, scaleTo200, sectionStats, selfGradeWarning } from '../lib/parent';
+import { isStandalone } from '../lib/pwa';
 
 interface Props {
   onBack: () => void;
@@ -14,6 +16,24 @@ interface Props {
   counts: { progress: number; sessions: number };
   /** 書き取りの自己採点の記録（新しい順） */
   selfGrades: SelfGradeRecord[];
+  /** 模擬試験の記録 */
+  exams: ExamResult[];
+  /** 学習の記録（日ごとのようすを出すのに使う） */
+  sessions: SessionRecord[];
+  /** 最後にバックアップした時刻（0なら一度もしていない） */
+  lastBackupAt: number;
+  /** バックアップに成功したときに知らせる */
+  onBackupDone: () => void;
+  /** 「このアプリについて」を開く */
+  onOpenAbout: () => void;
+}
+
+/** 何日前かを日本語にする */
+function daysAgoLabel(at: number, now = Date.now()): string {
+  const d = Math.floor((now - at) / (24 * 60 * 60 * 1000));
+  if (d <= 0) return 'きょう';
+  if (d === 1) return 'きのう';
+  return `${d}日前`;
 }
 
 const GRADE_LABEL: Record<SelfGradeRecord['grade'], string> = {
@@ -24,13 +44,25 @@ const GRADE_LABEL: Record<SelfGradeRecord['grade'], string> = {
 
 type Busy = null | 'export' | 'import' | 'erase';
 
-export function BackupScreen({ onBack, onDataChanged, counts, selfGrades }: Props) {
+export function BackupScreen({
+  onBack, onDataChanged, counts, selfGrades, exams, sessions, lastBackupAt, onBackupDone,
+  onOpenAbout,
+}: Props) {
   const [busy, setBusy] = useState<Busy>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [eraseStep, setEraseStep] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
   const [showAllGrades, setShowAllGrades] = useState(false);
+
+  const summary = useMemo(() => examSummary(exams), [exams]);
+  const weak = useMemo(() => sectionStats(exams), [exams]);
+  const days = useMemo(() => recentDays(sessions), [sessions]);
+  const examRows = useMemo(
+    () => [...exams].sort((a, b) => b.at - a.at).slice(0, 10),
+    [exams],
+  );
+  const gradeWarning = useMemo(() => selfGradeWarning(selfGrades), [selfGrades]);
 
   // 「できた」の割合。極端に高いときは、甘く採点している可能性がある
   const gradeStats = useMemo(() => {
@@ -46,6 +78,7 @@ export function BackupScreen({ onBack, onDataChanged, counts, selfGrades }: Prop
     setMessage(null);
     try {
       const name = await downloadBackup();
+      onBackupDone();
       setMessage(
         `「${name}」を書き出しました。iPad の「ファイル」アプリに保存されています。` +
           `iCloud Drive など、iPad の外にも残る場所にコピーしておくと安心です。`,
@@ -95,17 +128,149 @@ export function BackupScreen({ onBack, onDataChanged, counts, selfGrades }: Prop
     }
   }
 
+  // いまアプリとして開かれているか（ホーム画面に追加ずみか）
+  const standalone = isStandalone();
+  // アプリ本体がこのiPadに保存されているか
+  const offlineReady =
+    typeof navigator !== 'undefined' &&
+    'serviceWorker' in navigator &&
+    navigator.serviceWorker.controller !== null;
+  const backupStale =
+    lastBackupAt > 0 && Date.now() - lastBackupAt > 30 * 24 * 60 * 60 * 1000;
+
   return (
     <div className="app">
-      <h1>きろくの バックアップ</h1>
-      <p className="muted">この画面は、おうちの人が使う画面です。</p>
+      <h1>おうちの人の 画面</h1>
+      <p className="muted">
+        学習のようすの確認と、記録のバックアップができます。
+      </p>
 
-      <div className="notice">
-        <b>なぜ バックアップが必要か</b>
+      <div className={standalone ? 'notice' : 'notice bad'}>
+        <b>1. ホーム画面に追加できているか</b>
         <br />
-        iPad の Safari は、<b>ホーム画面に追加していないサイト</b>のデータを、
-        7日間使わないと自動で消すことがあります。
-        月に1回でよいので、下のボタンでファイルに書き出しておいてください。
+        {standalone ? (
+          <>
+            できています。この状態なら、iPad が勝手に記録を消すことはありません。
+          </>
+        ) : (
+          <>
+            <b>まだできていません。</b>
+            いまは Safari のタブとして開いています。この状態だと、
+            <b>7日間使わないと iPad が記録を自動で消すことがあります。</b>
+            <br />
+            <span className="muted">
+              やり方：画面の共有ボタン → 「ホーム画面に追加」 → 「追加」。
+              追加したあとは、ホーム画面のアイコンから開いてください。
+            </span>
+          </>
+        )}
+      </div>
+
+      <div className={offlineReady ? 'notice' : 'notice'}>
+        <b>2. 電波がなくても使えるか</b>
+        <br />
+        {offlineReady
+          ? 'このiPadには、アプリ本体が保存ずみです。電波がなくても使えます。'
+          : 'まだ準備中です。この画面をひらいたまま少し待つか、一度アプリを開きなおしてください。'}
+      </div>
+
+      <div className={backupStale ? 'notice bad' : 'notice'}>
+        <b>3. バックアップ</b>
+        <br />
+        {lastBackupAt === 0 ? (
+          <>
+            まだ一度も書き出していません。<b>下の「書き出す」を今すぐ実行してください。</b>
+          </>
+        ) : (
+          <>
+            最後の書き出し：{new Date(lastBackupAt).toLocaleDateString('ja-JP')}（
+            {daysAgoLabel(lastBackupAt)}）
+            {backupStale && <><br /><b>30日以上たっています。もう一度書き出しておくと安心です。</b></>}
+          </>
+        )}
+      </div>
+
+      {exams.length > 0 && (
+        <div className="card">
+          <h2>模擬試験の記録</h2>
+          <div className="stats" style={{ marginBottom: 12 }}>
+            <div className="stat">
+              <b>{summary.times}</b>
+              <span>受けた回数</span>
+            </div>
+            <div className="stat">
+              <b>{summary.latest}</b>
+              <span>最新（200点換算）</span>
+            </div>
+            <div className="stat">
+              <b>{summary.best}</b>
+              <span>最高</span>
+            </div>
+          </div>
+          <p className="muted">
+            直近3回の平均：<b>{summary.recentAverage}点</b>　／　
+            合格ライン（140点）に届いた回数：<b>{summary.passed}回</b>
+            <br />
+            ※ 承認がまだの分野をのぞいて出題しているため、点数は 200点満点に換算して表示しています。
+          </p>
+          <div className="gradelog exams">
+            {examRows.map((e, i) => (
+              <div className="row2" key={e.id ?? i}>
+                <span>{e.date}</span>
+                <span>
+                  {e.score} / {e.total}点
+                  <br />
+                  <span className="muted">
+                    200点換算 {scaleTo200(e)}点・{Math.round(e.seconds / 60)}分
+                    {e.timedOut ? '・時間切れ' : ''}
+                  </span>
+                </span>
+                <span>{scaleTo200(e) >= 140 ? '合格ライン ○' : '△'}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {weak.length > 0 && (
+        <div className="card">
+          <h2>苦手な分野（模擬試験より）</h2>
+          <p className="muted">
+            正答率の低い順です。ここが伸びると点が上がります。
+          </p>
+          {weak.map((s) => (
+            <div key={s.no} style={{ marginBottom: 10 }}>
+              <div className="levelbar">
+                <span style={{ minWidth: 0 }}>
+                  {s.no} {s.title}
+                </span>
+                <div className="progressbar" style={{ margin: 0 }}>
+                  <div style={{ width: `${s.rate}%` }} />
+                </div>
+                <span className="muted">{s.rate}%</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="card">
+        <h2>この2週間の学習</h2>
+        <div className="daybars">
+          {days.map((d) => (
+            <div className="daybar" key={d.date} title={`${d.date}：${d.count}問`}>
+              <div
+                className={d.count > 0 ? 'on' : ''}
+                style={{ height: `${Math.min(100, d.count === 0 ? 3 : 12 + d.count * 2.5)}%` }}
+              />
+              <span>{Number(d.date.slice(8))}</span>
+            </div>
+          ))}
+        </div>
+        <p className="muted">
+          棒の高さは、その日に答えた問題の数です。
+          毎日少しずつ続いているかを見てください（できない日があっても責めないでください）。
+        </p>
       </div>
 
       {message && <div className="notice">{message}</div>}
@@ -137,11 +302,10 @@ export function BackupScreen({ onBack, onDataChanged, counts, selfGrades }: Prop
           </div>
           <p className="muted">
             「できた」の割合：<b>{gradeStats.okRate}%</b>（全{gradeStats.n}問）
-            {gradeStats.n >= 20 && gradeStats.okRate >= 95 && (
+            {gradeWarning && (
               <>
                 <br />
-                ほぼ全問「できた」になっています。字を見くらべる目安が
-                ゆるくなっていないか、一度いっしょに確認してみてください。
+                {gradeWarning}
               </>
             )}
           </p>
@@ -171,7 +335,7 @@ export function BackupScreen({ onBack, onDataChanged, counts, selfGrades }: Prop
       )}
 
       <div className="card">
-        <h2>1. 書き出す（バックアップを作る）</h2>
+        <h2>書き出す（バックアップを作る）</h2>
         <p className="muted">
           いまの記録：漢字 {counts.progress}字 ／ 学習 {counts.sessions}回
         </p>
@@ -181,10 +345,10 @@ export function BackupScreen({ onBack, onDataChanged, counts, selfGrades }: Prop
       </div>
 
       <div className="card">
-        <h2>2. 読みこむ（バックアップから戻す）</h2>
+        <h2>読みこむ（バックアップから戻す）</h2>
         <p className="muted">
           いまの記録は、読みこんだ内容に<b>置きかわります</b>。
-          先に「1. 書き出す」をしておくと安心です。
+          先に「書き出す」をしておくと安心です。
         </p>
         <input
           ref={fileRef}
@@ -206,7 +370,7 @@ export function BackupScreen({ onBack, onDataChanged, counts, selfGrades }: Prop
       </div>
 
       <div className="card">
-        <h2>3. すべて消す</h2>
+        <h2>すべて消す</h2>
         {eraseStep === 0 && (
           <>
             <p className="muted">
@@ -222,7 +386,7 @@ export function BackupScreen({ onBack, onDataChanged, counts, selfGrades }: Prop
             <p>
               <b>確認1／2</b>
               <br />
-              先にバックアップを書き出しましたか？ まだなら、上の「1. 書き出す」を先にしてください。
+              先にバックアップを書き出しましたか？ まだなら、上の「書き出す」を先にしてください。
             </p>
             <div className="row">
               <button onClick={() => setEraseStep(0)}>やめる</button>
@@ -248,6 +412,17 @@ export function BackupScreen({ onBack, onDataChanged, counts, selfGrades }: Prop
             </div>
           </>
         )}
+      </div>
+
+      <div className="card">
+        <h2>このアプリについて</h2>
+        <p className="muted">
+          データの置き場所と、借りているデータの出どころ（KanjiVG・JMdict など）を
+          まとめてあります。
+        </p>
+        <button className="wide" onClick={onOpenAbout}>
+          出どころと決まりを見る
+        </button>
       </div>
 
       <button className="primary" onClick={onBack}>

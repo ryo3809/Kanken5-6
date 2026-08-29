@@ -44,6 +44,8 @@ const ctx = await browser.newContext({
   ...devices['iPad (gen 7)'],
   locale: 'ja-JP',
   timezoneId: 'Asia/Tokyo',
+  // オフライン用のしくみは、このテストでは使わない（毎回まっさらな状態で試すため）
+  serviceWorkers: 'block',
 });
 const page = await ctx.newPage();
 const consoleErrors = [];
@@ -153,9 +155,9 @@ try {
   console.log(`    例）${due.sample.join(' / ')}`);
 
   console.log('\n▶ テスト6　バックアップ画面');
-  await page.getByRole('button', { name: 'きろくの バックアップ' }).click();
+  await page.getByRole('button', { name: 'おうちの人の がめん' }).click();
   await page.waitForSelector('h1');
-  check('バックアップ画面が開く', (await page.locator('h1').textContent()) === 'きろくの バックアップ');
+  check('おうちの人の画面が開く', (await page.locator('h1').textContent()) === 'おうちの人の 画面');
   check('「漢字 10字」と出る', (await page.locator('body').textContent()).includes('漢字 10字'));
   const dl = page.waitForEvent('download', { timeout: 10000 });
   await page.getByRole('button', { name: /ファイルに 書き出す/ }).click();

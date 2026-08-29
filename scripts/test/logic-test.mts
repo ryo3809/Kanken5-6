@@ -10,7 +10,12 @@ import {
   buildWordIndex, charsForKyu, collectReadings, makeReadingQuestion, isCorrect, normalizeAnswer,
   makeWritingQuestion, toKatakana,
 } from '../../src/lib/questions.ts';
-import type { KanjiEntry, WordEntry, Progress } from '../../src/lib/types.ts';
+import {
+  examSummary, recentDays, scaleTo200, sectionStats, selfGradeWarning,
+} from '../../src/lib/parent.ts';
+import type {
+  ExamResult, KanjiEntry, SelfGradeRecord, SessionRecord, WordEntry, Progress,
+} from '../../src/lib/types.ts';
 
 const kanji: KanjiEntry[] = JSON.parse(readFileSync('src/data/kanji.json', 'utf8')).kanji;
 const words: WordEntry[] = JSON.parse(readFileSync('src/data/words.json', 'utf8')).words;
@@ -278,6 +283,63 @@ console.log('\n▶ テスト7　ホーム画面の集計');
   check('未学習の字数', s.unseen === 805, `${s.unseen}字`);
   check('きょうの復習は0（全部あさって以降）', s.due === 0);
   check('箱2に30字', s.boxes[2] === 30);
+}
+
+console.log('\n▶ テスト　おうちの人の画面のまとめ方');
+{
+  const mk = (date: string, at: number, score: number, total: number): ExamResult => ({
+    date, at, kyu: 6, score, total, fullTotal: 200, seconds: 3000, timedOut: false,
+    sections: [
+      { no: '(一)', title: '漢字の読み', score: 5, points: 20 },
+      { no: '(十一)', title: '漢字の書取', score: 30, points: 40 },
+    ],
+  });
+  const exams = [mk('2026-08-01', 1000, 80, 160), mk('2026-08-10', 2000, 120, 160)];
+
+  check('160点満点の点を200点に直す', scaleTo200(exams[1]) === 150, `${scaleTo200(exams[1])}点`);
+  check('満点が0でも落ちない', scaleTo200({ ...exams[0], total: 0 }) === 0);
+
+  const sum = examSummary(exams);
+  check('受けた回数', sum.times === 2);
+  check('最新の点は、保存の順ではなく日時で決まる', sum.latest === 150, `${sum.latest}点`);
+  check('最高点', sum.best === 150);
+  check('直近3回の平均', sum.recentAverage === 125, `${sum.recentAverage}点`);
+  check('合格ラインに届いた回数', sum.passed === 1);
+  const empty = examSummary([]);
+  check('1回も受けていなくても落ちない', empty.times === 0 && empty.latest === null);
+
+  const stats = sectionStats(exams);
+  check('大問ごとにまとめられる', stats.length === 2);
+  check('苦手な順に並ぶ', stats[0].no === '(一)', stats.map((x) => x.no).join(','));
+  check('正答率が出る', stats[0].rate === 25 && stats[1].rate === 75,
+    `${stats[0].rate}% / ${stats[1].rate}%`);
+  check('出てこなかった大問は数に入らない', sectionStats([
+    { ...exams[0], sections: [{ no: '(五)', title: '熟語の構成', score: 0, points: 0 }] },
+  ]).length === 0);
+
+  const today = new Date('2026-08-20T10:00:00+09:00');
+  const sessions: SessionRecord[] = [
+    { date: '2026-08-20', startedAt: 0, finishedAt: 0, kyu: 6, mode: 'reading', total: 10, correct: 8, wrongChars: [] },
+    { date: '2026-08-20', startedAt: 0, finishedAt: 0, kyu: 6, mode: 'writing', total: 5, correct: 4, wrongChars: [] },
+    { date: '2026-08-14', startedAt: 0, finishedAt: 0, kyu: 6, mode: 'reading', total: 10, correct: 9, wrongChars: [] },
+    { date: '2026-07-01', startedAt: 0, finishedAt: 0, kyu: 6, mode: 'reading', total: 10, correct: 9, wrongChars: [] },
+  ];
+  const days = recentDays(sessions, 14, today);
+  check('14日ぶん返す', days.length === 14);
+  check('最後の日はきょう', days[13].date === '2026-08-20');
+  check('同じ日の問題数はたし合わせる', days[13].count === 15, `${days[13].count}問`);
+  check('7日前も数えられる', days[7].count === 10, `${days[7].date}=${days[7].count}`);
+  check('14日より前は入らない', days.every((d) => d.date >= '2026-08-07'));
+
+  const grade = (g: SelfGradeRecord['grade']): SelfGradeRecord =>
+    ({ date: '2026-08-20', at: 1, c: '税', word: '税金', grade: g });
+  check('20件未満では注意しない',
+    selfGradeWarning(Array.from({ length: 19 }, () => grade('ok'))) === null);
+  check('ほぼ全部「できた」なら注意する',
+    (selfGradeWarning(Array.from({ length: 20 }, () => grade('ok'))) ?? '').includes('ゆるくなっていないか'));
+  check('できない子を責める文は出さない', selfGradeWarning(
+    Array.from({ length: 20 }, () => grade('ng')),
+  ) === null);
 }
 
 console.log(`\n${'='.repeat(52)}`);

@@ -13,9 +13,12 @@
     />
     <meta name="theme-color" content="#f7f3e9" />
     <!-- アイコン。これが無いとブラウザが /favicon.ico を探して404になる -->
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="/favicon.svg" />
-    <!-- ホーム画面に追加したときの見た目（フェーズ7で本格対応します） -->
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <!-- iPad の「ホーム画面に追加」で使われるアイコン。PNG でないと表示されない -->
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+    <!-- ホーム画面に追加したときの名前・色・アイコンをまとめた設定ファイル -->
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <!-- ホーム画面に追加したときの見た目 -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="かんじけんてい" />

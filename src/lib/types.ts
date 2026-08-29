@@ -195,15 +195,24 @@ export interface Settings {
   sessionSize: 10 | 15 | 20;
   /** 答え方。choice=4つから選ぶ / input=ひらがなで入力する */
   answerMode: 'choice' | 'input';
-  /** 「ホーム画面に追加」の案内を閉じたか */
-  dismissedInstallHint: boolean;
+  /**
+   * 「ホーム画面に追加」の案内を、いつまで隠すか（時刻。0ならいつも出す）
+   *
+   * ここを「一度閉じたらもう出さない」にしてはいけません。
+   * ホーム画面に追加していないと iPad が7日で記録を消してしまうため、
+   * 追加が済むまでは、閉じても7日後にまた出るようにしてあります。
+   */
+  installHintHiddenUntil: number;
+  /** 最後にバックアップを書き出した時刻（0なら一度も書き出していない） */
+  lastBackupAt: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   kyu: 6,
   sessionSize: 10,
   answerMode: 'choice',
-  dismissedInstallHint: false,
+  installHintHiddenUntil: 0,
+  lastBackupAt: 0,
 };
 
 /** 1問ぶんの問題 */

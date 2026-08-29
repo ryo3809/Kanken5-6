@@ -4,6 +4,7 @@ import type { Box, GameState, Settings } from '../lib/types';
 import { Shibamaru } from '../character/Shibamaru';
 import { pickLine, type Expression } from '../character/expressions';
 import { levelProgress, mapProgress, stampInfo } from '../lib/gamification';
+import { INSTALL_HINT_SNOOZE_DAYS, shouldShowInstallHint } from '../lib/pwa';
 
 interface Props {
   settings: Settings;
@@ -33,17 +34,6 @@ interface Props {
 }
 
 const BOX_LABEL: Record<Box, string> = { 1: 'はこ1', 2: 'はこ2', 3: 'はこ3', 4: 'はこ4', 5: 'はこ5' };
-
-/** ホーム画面に追加していないと、iOS はデータを7日で消すことがある */
-function needsInstallHint(): boolean {
-  const standalone =
-    (window.navigator as unknown as { standalone?: boolean }).standalone === true ||
-    window.matchMedia('(display-mode: standalone)').matches;
-  const isIOS =
-    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  return isIOS && !standalone;
-}
 
 export function Home(props: Props) {
   const { settings, summary, todayAnswered, storageOk, blockedCount, game } = props;
@@ -87,7 +77,7 @@ export function Home(props: Props) {
         </div>
       )}
 
-      {needsInstallHint() && !settings.dismissedInstallHint && (
+      {shouldShowInstallHint(settings.installHintHiddenUntil) && (
         <div className="notice">
           <b>さいしょに やってほしいこと</b>
           <br />
@@ -101,7 +91,7 @@ export function Home(props: Props) {
           </span>
           <br />
           <button className="ghost" style={{ marginTop: 8 }} onClick={props.onDismissInstallHint}>
-            わかった（この あんないを とじる）
+            わかった（{INSTALL_HINT_SNOOZE_DAYS}日後に また 出ます）
           </button>
         </div>
       )}
@@ -216,7 +206,7 @@ export function Home(props: Props) {
       </div>
 
       <div className="row">
-        <button onClick={props.onOpenBackup}>きろくの バックアップ</button>
+        <button onClick={props.onOpenBackup}>おうちの人の がめん</button>
         <button onClick={props.onOpenSettings}>せってい</button>
       </div>
     </div>

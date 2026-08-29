@@ -351,6 +351,8 @@ label.field .control button[aria-pressed='true'] {
   font-size: 15px;
 }
 .gradelog .big { font-size: 24px; text-align: center; }
+/* 模試の記録は、左に日付（2026-08-10）が入るので広めにする */
+.gradelog.exams .row2 { grid-template-columns: 92px 1fr auto; }
 
 /* ───── しばまる ───── */
 
@@ -583,3 +585,31 @@ label.field .control button[aria-pressed='true'] {
   .gradepair { grid-template-columns: 1fr; }
   .secbar { grid-template-columns: 1fr 60px 52px; font-size: 13px; }
 }
+
+/* ───── おうちの人の画面：2週間の学習グラフ ───── */
+
+.daybars {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 4px;
+  align-items: end;
+  height: 92px;
+  margin-bottom: 10px;
+}
+.daybar {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  height: 100%;
+  gap: 4px;
+}
+.daybar > div {
+  width: 100%;
+  min-height: 3px;
+  border-radius: 4px 4px 0 0;
+  background: var(--line);
+}
+.daybar > div.on { background: var(--accent); }
+.daybar > span { font-size: 11px; color: var(--muted); }

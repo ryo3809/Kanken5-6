@@ -1,0 +1,34 @@
+<!--
+  ホーム画面に置くアイコンのもとになる絵。
+  しばまるの顔と「漢」の字。
+  Android のまるい切りぬきに対応するため、絵は中央 80% の中におさめています。
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="かんじけんてい しばまる">
+  <rect width="512" height="512" fill="#f7f3e9"/>
+  <g transform="translate(232 205) scale(6.0) translate(-32 -31)">
+    <!-- みみ -->
+    <path d="M16 22 L20 8 L30 18 Z" fill="#e8883a"/>
+    <path d="M48 22 L44 8 L34 18 Z" fill="#e8883a"/>
+    <!-- かお -->
+    <circle cx="32" cy="36" r="18" fill="#e8883a"/>
+    <!-- ほお -->
+    <circle cx="32" cy="42" r="12" fill="#fdf6ec"/>
+    <!-- め -->
+    <circle cx="25" cy="33" r="2.6" fill="#33302b"/>
+    <circle cx="39" cy="33" r="2.6" fill="#33302b"/>
+    <!-- まゆ -->
+    <circle cx="24" cy="26" r="2" fill="#fdf6ec"/>
+    <circle cx="40" cy="26" r="2" fill="#fdf6ec"/>
+    <!-- はな -->
+    <circle cx="32" cy="40" r="2.4" fill="#33302b"/>
+    <!-- くち -->
+    <path d="M32 42 Q28 47 25 43" stroke="#33302b" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+    <path d="M32 42 Q36 47 39 43" stroke="#33302b" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+  </g>
+  <!-- 「漢」のしるし -->
+  <circle cx="396" cy="400" r="70" fill="#f7f3e9"/>
+  <circle cx="396" cy="400" r="62" fill="#33302b"/>
+  <text x="396" y="402" fill="#faf7f0" font-size="80" font-weight="700"
+        text-anchor="middle" dominant-baseline="central"
+        font-family="'Hiragino Mincho ProN','Yu Mincho','Noto Serif JP',serif">漢</text>
+</svg>

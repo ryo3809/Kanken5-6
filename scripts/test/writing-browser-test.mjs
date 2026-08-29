@@ -23,7 +23,10 @@ for (let i = 0; i < 40; i++) {
 }
 
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
-const ctx = await browser.newContext({ ...devices['iPad (gen 7)'], locale: 'ja-JP' });
+// オフライン用のしくみは、このテストでは使わない（毎回まっさらな状態で試すため）
+const ctx = await browser.newContext({
+  ...devices['iPad (gen 7)'], locale: 'ja-JP', serviceWorkers: 'block',
+});
 const page = await ctx.newPage();
 const errors = [];
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
@@ -192,7 +195,7 @@ try {
     db.gradeKinds.join(','));
 
   console.log('\n▶ テスト9　保護者が自己採点を確認できるか');
-  await page.getByRole('button', { name: 'きろくの バックアップ' }).click();
+  await page.getByRole('button', { name: 'おうちの人の がめん' }).click();
   await page.waitForSelector('h1');
   const parent = await page.locator('body').textContent();
   check('「書き取りの自己採点」の欄がある', parent.includes('書き取りの自己採点'));

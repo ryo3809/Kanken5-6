@@ -139,3 +139,60 @@ export async function refreshApprovals(root, kind, items) {
     approved: rows.filter((r) => String(r[col]).toUpperCase() === 'OK').length,
   };
 }
+
+/** 承認ファイルの「キー」を外から作れるようにする（1行ぶんの配列から） */
+export function approvalKey(kind, cells) {
+  return KEYS[kind](cells);
+}
+
+/** 承認・確認日・メモが何列目かを外から知るため */
+export function approvalColumn(kind) {
+  return APPROVAL_COL[kind];
+}
+
+/**
+ * すでにある承認ファイルの、指定した行だけ「承認」を書きかえる。
+ *
+ * 行の中身（熟語・読みなど）には一切さわりません。
+ * すでに OK と書かれている行を、あとから空に戻すこともしません
+ * （うっかり承認を取り消してしまう事故をふせぐため）。
+ *
+ * @param root      プロジェクトの場所
+ * @param kind      種類（word / radical / pair / kozo）
+ * @param decisions Map: キー → { approved: true, date: '2026-08-29', memo: '...' }
+ * @returns 書きかえた件数
+ */
+export async function setApprovals(root, kind, decisions) {
+  const file = path.join(root, APPROVAL_FILES[kind]);
+  let text;
+  try {
+    text = await readFile(file, 'utf8');
+  } catch {
+    return 0;                    // ファイルがまだ無いなら何もしない
+  }
+  const col = APPROVAL_COL[kind];
+  const lines = text.replace(/^﻿/, '').split(/\r?\n/);
+  const head = lines[0];
+  const out = [head];
+  let changed = 0;
+
+  for (const line of lines.slice(1)) {
+    if (!line.trim()) continue;
+    const cells = parseLine(line);
+    const key = KEYS[kind](cells);
+    const d = decisions.get(key);
+    const already = String(cells[col] ?? '').trim().toUpperCase() === 'OK';
+    if (d && d.approved && !already) {
+      cells[col] = 'OK';
+      cells[col + 1] = d.date ?? '';
+      if (d.memo) cells[col + 2] = d.memo;
+      changed++;
+    }
+    out.push(cells.map(cell).join(','));
+  }
+
+  // 先に新しいファイルを書いてから置きかえる（途中で止まっても元が残る）
+  await writeFile(`${file}.tmp`, `﻿${out.join('\r\n')}\r\n`, 'utf8');
+  await rename(`${file}.tmp`, file);
+  return changed;
+}

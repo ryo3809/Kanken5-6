@@ -1,0 +1,18 @@
+{
+  "name": "漢検 6級・5級 れんしゅう",
+  "short_name": "かんじ",
+  "description": "漢字検定 6級・5級 の練習アプリ。記録はこの端末の中だけに保存され、外には送られません。",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "id": "kanken-5-6",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f7f3e9",
+  "theme_color": "#f7f3e9",
+  "icons": [
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
