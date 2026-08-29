@@ -18,6 +18,7 @@ interface Props {
   blockedCount: number;
   onStart: () => void;
   onStartTracing: () => void;
+  onStartWriting: () => void;
   /** なぞり書きをしたことのある漢字の数 */
   tracedCount: number;
   onOpenSettings: () => void;
@@ -121,12 +122,19 @@ export function Home(props: Props) {
       </div>
 
       <div className="card">
-        <h2>なぞりがき</h2>
+        <h2>かんじを かく</h2>
         <p className="muted">
           おてほんの うえを なぞって、かきじゅんを おぼえます。3字ずつです。
         </p>
         <button className="wide" onClick={props.onStartTracing}>
           ✏️ なぞりがきを する
+        </button>
+        <p className="muted" style={{ marginTop: 16 }}>
+          <b>かきとり</b>は、しろい マスに じぶんの力で かきます。
+          かいたあとで おてほんと くらべて、じぶんで さいてんします。
+        </p>
+        <button className="wide" onClick={props.onStartWriting}>
+          📝 かきとりを する
         </button>
         {props.tracedCount > 0 && (
           <p className="muted center" style={{ marginTop: 10, marginBottom: 0 }}>

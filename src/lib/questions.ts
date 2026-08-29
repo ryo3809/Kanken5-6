@@ -10,12 +10,25 @@
 
 import type { KanjiEntry, Kyu, Question, WordEntry } from './types';
 
-/** 級ごとの対象漢字（学年順） */
+/**
+ * 級ごとの対象漢字を、練習する順にならべる。
+ *
+ * ならべ方は「学年の高いほうから」です。
+ *   6級 → 5年配当（この級の新出範囲）→ 4年 → 3年 → 2年 → 1年
+ *   5級 → 6年配当（この級の新出範囲）→ 5年 → …
+ *
+ * 理由：受検するのは小学5・6年生なので、1年生の「一」から始めても練習になりません。
+ * その級で新しく出る漢字がいちばん大事なので、そこから始めます。
+ * やさしい漢字は、まちがえたときに復習のしくみが拾ってくれます。
+ *
+ * 順番を変えたいときは、この関数の並べ替えだけを直せば
+ * 読み問題・書き取り・なぞり書きのすべてに反映されます。
+ */
 export function charsForKyu(kanji: KanjiEntry[], kyu: Kyu): string[] {
   const maxGrade = kyu === 6 ? 5 : 6;
   return kanji
     .filter((k) => k.grade <= maxGrade)
-    .sort((a, b) => a.grade - b.grade || a.order - b.order)
+    .sort((a, b) => b.grade - a.grade || a.order - b.order)
     .map((k) => k.c);
 }
 
@@ -115,4 +128,59 @@ export function isCorrect(q: Question, input: string): boolean {
   const got = normalizeAnswer(input);
   if (!got) return false;
   return q.acceptable.some((a) => normalizeAnswer(a) === got);
+}
+
+// ────────────────────────────────────────────────────────────
+// 書き取り問題（自己採点）
+// ────────────────────────────────────────────────────────────
+
+/** ひらがなをカタカナに直す */
+export function toKatakana(s: string): string {
+  return s.replace(/[ぁ-ゖ]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) + 0x60));
+}
+
+/** 書き取り問題1問ぶん */
+export interface WritingQuestion {
+  /** 書かせたい漢字 */
+  answer: string;
+  /** もとの熟語（答え合わせのときに見せる） */
+  word: string;
+  /** 熟語ぜんぶの読み */
+  wordReading: string;
+  /** 画面に出す形。書かせる字だけカタカナになっている（例：ゼイ金） */
+  display: string;
+  /** 書かせる字の読み（カタカナ） */
+  targetReading: string;
+}
+
+/**
+ * 「ゼイ金」のように、書かせたい漢字だけをカタカナにした問題を作る。
+ * 本番の検定と同じ出し方です。
+ *
+ * 熟字訓（今日＝きょう など）は1字ずつに分けられないので使いません。
+ */
+export function makeWritingQuestion(
+  targetChar: string,
+  wordIndex: Map<string, WordEntry[]>,
+  used: Set<string>,
+): WritingQuestion | null {
+  const candidates = wordIndex.get(targetChar);
+  if (!candidates || candidates.length === 0) return null;
+
+  const usable = candidates.filter((w) => {
+    if (w.jukujikun) return false;
+    const i = [...w.w].indexOf(targetChar);
+    return i >= 0 && !!w.p[i];
+  });
+  if (usable.length === 0) return null;
+
+  const word = usable.find((w) => !used.has(w.w)) ?? usable[0];
+  used.add(word.w);
+
+  const chars = [...word.w];
+  const i = chars.indexOf(targetChar);
+  const targetReading = toKatakana(word.p[i] as string);
+  const display = chars.map((c, j) => (j === i ? targetReading : c)).join('');
+
+  return { answer: targetChar, word: word.w, wordReading: word.r, display, targetReading };
 }

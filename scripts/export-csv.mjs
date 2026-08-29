@@ -13,6 +13,7 @@
 import { readFile, writeFile, rename } from 'node:fs/promises';
 import path from 'node:path';
 import { log, runScript, ensureDir, FriendlyError } from './lib/util.mjs';
+import { refreshApprovals, APPROVAL_FILE } from './lib/approvals.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const DATA = path.join(ROOT, 'src/data');
@@ -108,23 +109,14 @@ runScript('CSVの書き出し', async () => {
   );
   log.ok(`2-熟語一覧.csv（${n2}行）`);
 
-  log.step('3/4 いますぐ確認してほしいリスト');
-  const todo = words
-    .filter((x) => !x.verified)
-    .map((w) => [
-      w.w,
-      w.r,
-      w.lv === 6 ? '6級から' : '5級から',
-      w.src,
-      'この熟語と読みで合っていますか？　合っていれば「OK」、ちがえば正しい読みを書いてください',
-      '',
-    ]);
-  const n3 = await writeCsv(
-    path.join(OUT, '3-いますぐ確認.csv'),
-    ['熟語', 'いまの読み', '出題級', '出どころ', 'やること', '確認結果（ここに書いてください）'],
-    todo,
-  );
-  log.ok(`3-いますぐ確認.csv（${n3}行）… これだけ見ればフェーズ1aは完了です`);
+  log.step('3/4 承認ファイルの更新');
+  // 出どころがはっきりしない熟語を、承認ファイルに書き出す。
+  // すでに「OK」と書かれているものは、絶対に上書きしません。
+  const pending = words.filter((w) => w.src.includes('要校正') || !w.verified);
+  const res = await refreshApprovals(ROOT, pending);
+  log.ok(`${APPROVAL_FILE}（${res.total}行／承認ずみ ${res.approved}行）`);
+  log.info('確認が必要な熟語は、このファイルの「承認」の列に OK と書いてください。');
+  log.info('書いたあと npm run data:build を実行すると、アプリに出るようになります。');
 
   log.step('4/4 部首の校正シート（フェーズ1bの作業）');
   const radRows = kanji.map((k) => [
@@ -151,7 +143,7 @@ runScript('CSVの書き出し', async () => {
   console.log('');
   console.log('  1-漢字一覧.csv        … 1026字ぜんぶ。ざっと眺めて、変な読みが無いか見てください');
   console.log('  2-熟語一覧.csv        … 出題に使う熟語ぜんぶ。よく使う順にならんでいます');
-  console.log('  3-いますぐ確認.csv    … ★まずこれ。人の確認が必要なものだけ');
+  console.log('  （承認ファイルは data/word-approvals.csv です）');
   console.log('  4-部首の校正シート.csv … フェーズ1bで使います。いまは見なくて大丈夫です');
   console.log('');
 });

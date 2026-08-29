@@ -285,3 +285,65 @@ label.field .control button[aria-pressed='true'] {
 @media (orientation: landscape) and (min-width: 700px) {
   .tracebox { max-width: min(64vh, 420px); }
 }
+
+/* ───── 書き取り（自己採点）───── */
+
+.writing-prompt {
+  font-size: clamp(44px, 13vw, 76px);
+  line-height: 1.25;
+  text-align: center;
+  letter-spacing: 0.06em;
+  margin: 6px 0 2px;
+  font-weight: 500;
+}
+
+/* こたえを、自分の字の上に半透明で重ねる */
+.answer-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.answer-stroke {
+  fill: none;
+  stroke: #7a5cc4;      /* むらさき。自分の字（黒）と見分けがつく色 */
+  stroke-opacity: 0.55;
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* できた／おしい／まちがえた のボタン */
+.gradebuttons { display: grid; gap: 10px; }
+.gradebuttons button {
+  width: 100%;
+  min-height: 68px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 10px 16px;
+}
+.gradebuttons .label { font-size: 20px; font-weight: 700; }
+.gradebuttons .hint { font-size: 13px; color: var(--ink-soft); font-weight: 400; }
+.gradebuttons .grade-ok { background: var(--ok-bg); border-color: var(--ok); }
+.gradebuttons .grade-ok .label { color: #2f6b3d; }
+.gradebuttons .grade-close { background: #fff6e8; border-color: #e0a75c; }
+.gradebuttons .grade-close .label { color: #9a6314; }
+.gradebuttons .grade-ng { background: var(--ng-bg); border-color: var(--ng); }
+.gradebuttons .grade-ng .label { color: #a4402a; }
+
+/* 自己採点の記録（保護者向け）*/
+.gradelog { display: grid; gap: 6px; }
+.gradelog .row2 {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 15px;
+}
+.gradelog .big { font-size: 24px; text-align: center; }

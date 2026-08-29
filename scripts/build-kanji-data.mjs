@@ -14,6 +14,7 @@
 import { readFile, writeFile, rename, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { SOURCES, LICENSES } from './sources.mjs';
+import { loadApprovals, APPROVAL_FILE } from './lib/approvals.mjs';
 import {
   log, runScript, ensureDir, FriendlyError, isKanji, isKatakanaOnly,
 } from './lib/util.mjs';
@@ -262,6 +263,11 @@ runScript('データの組み立て', async () => {
   const freqRank = await loadFrequency();
 
   log.step('6/6 まとめて書き出し');
+  const approvals = await loadApprovals(ROOT);
+  const approvedCount = [...approvals.values()].filter((a) => a.approved).length;
+  if (approvals.size > 0) {
+    log.ok(`${APPROVAL_FILE}：${approvals.size}件のうち ${approvedCount}件が承認ずみ`);
+  }
   await ensureDir(OUT_DATA);
   await ensureDir(OUT_STROKES);
 
@@ -414,8 +420,9 @@ runScript('データの組み立て', async () => {
       alt: list.length > 1 ? list : undefined,
       // 熟字訓は1字ずつの読みが無いのが正常。読み問題には使えるが書き取りの部品にはしない
       jukujikun: juku ? true : undefined,
-      // 出典が国語辞典・固有名詞辞典のものは、保護者の校正が済むまで出題しない
-      verified: !source.includes('要校正'),
+      // 出典が国語辞典・固有名詞辞典のものは、保護者が確かめるまで出題しない。
+      // data/word-approvals.csv に「OK」と書かれていれば出題する。
+      verified: !source.includes('要校正') || approvals.get(`${w}|${juku ?? reading}`)?.approved === true,
     });
   }
   // よく使う語を先に、頻度不明の語を後ろに
@@ -467,7 +474,7 @@ runScript('データの組み立て', async () => {
 
   console.log(`\n${'='.repeat(60)}`);
   log.ok(`漢字 ${kanji.length}字（6級 ${meta.counts.kanji6kyu}字 / 5級 ${meta.counts.kanji5kyu}字）`);
-  log.ok(`熟語 ${words.length}語（6級で使える ${meta.counts.words6kyu}語 / 校正不要 ${meta.counts.wordsVerified}語 / 要校正 ${meta.counts.wordsNeedReview}語）`);
+  log.ok(`熟語 ${words.length}語（6級で使える ${meta.counts.words6kyu}語 / 出題できる ${meta.counts.wordsVerified}語 / 確認まち ${meta.counts.wordsNeedReview}語）`);
   log.ok(`筆順データ 6ファイル 合計 ${(strokeBytes / 1024 / 1024).toFixed(2)}MB`);
   if (wordsNoReading.length) {
     log.warn(`読みが見つからず不採用にした語：${wordsNoReading.length}語（例: ${wordsNoReading.slice(0, 8).join('、')}）`);

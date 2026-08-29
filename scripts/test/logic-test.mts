@@ -8,6 +8,7 @@ import {
 } from '../../src/lib/leitner.ts';
 import {
   buildWordIndex, charsForKyu, collectReadings, makeReadingQuestion, isCorrect, normalizeAnswer,
+  makeWritingQuestion, toKatakana,
 } from '../../src/lib/questions.ts';
 import type { KanjiEntry, WordEntry, Progress } from '../../src/lib/types.ts';
 
@@ -27,8 +28,12 @@ check('6級は835字', c6.length === 835, `${c6.length}字`);
 check('5級は1026字', c5.length === 1026, `${c5.length}字`);
 check('6級に6年生の漢字が入っていない',
   c6.every((c) => kanji.find((k) => k.c === c)!.grade <= 5));
-check('学年の小さい順にならんでいる',
-  c6.every((c, i) => i === 0 || kanji.find((k) => k.c === c)!.grade >= kanji.find((k) => k.c === c6[i-1])!.grade));
+check('学年の高い順にならんでいる（新出漢字から練習する）',
+  c6.every((c, i) => i === 0 || kanji.find((k) => k.c === c)!.grade <= kanji.find((k) => k.c === c6[i-1])!.grade));
+check('6級の1字目は5年配当（「一」から始めない）',
+  kanji.find((k) => k.c === c6[0])!.grade === 5, `1字目は「${c6[0]}」（${kanji.find((k) => k.c === c6[0])!.grade}年）`);
+check('5級の1字目は6年配当',
+  kanji.find((k) => k.c === c5[0])!.grade === 6, `1字目は「${c5[0]}」（${kanji.find((k) => k.c === c5[0])!.grade}年）`);
 
 console.log('\n▶ テスト2　問題づくり');
 const idx6 = buildWordIndex(words, 6);
@@ -75,6 +80,60 @@ let outOfRange = 0;
 for (const c of c6) { const q = makeReadingQuestion(c, idx6, pool6, u3); if (q && [...q.word].some((x) => g6.has(x))) outOfRange++; }
 check('6級の問題に6年生の漢字が混ざらない', outOfRange === 0, `混入 ${outOfRange}件`);
 
+console.log('\n▶ テスト2b　書き取り問題（自己採点）');
+{
+  const usedW = new Set<string>();
+  const missW: string[] = [];
+  let madeW = 0;
+  for (const c of c6) {
+    const q = makeWritingQuestion(c, idx6, usedW);
+    if (q) madeW++; else missW.push(c);
+  }
+  check('6級の全835字で書き取り問題が作れる', missW.length === 0,
+    `作れた ${madeW}字${missW.length ? ' / 作れない：' + missW.join('') : ''}`);
+
+  const usedW5 = new Set<string>();
+  const missW5 = c5.filter((c) => !makeWritingQuestion(c, idx5, usedW5));
+  check('5級でも、作れないのは校正まちの字だけ',
+    missW5.every((c) => pendingChars.has(c)),
+    `作れない ${missW5.length}字${missW5.length ? '：' + missW5.join('') : ''}`);
+
+  const wq = makeWritingQuestion('税', buildWordIndex(words, 6), new Set())!;
+  check('書かせる字だけがカタカナになる', wq.display.includes(wq.targetReading) && !wq.display.includes('税'),
+    `${wq.word} → 「${wq.display}」（こたえ：${wq.answer}）`);
+  check('カタカナは音読み・訓読みの形になっている', /^[ァ-ヶー]+$/.test(wq.targetReading), wq.targetReading);
+  check('ひらがな→カタカナの変換', toKatakana('ぜいきん') === 'ゼイキン', toKatakana('ぜいきん'));
+
+  // 熟字訓（今日＝きょう など）は1字ずつに分けられないので使わない
+  const juku = words.filter((w) => w.jukujikun).map((w) => w.w);
+  let jukuUsed = 0;
+  const u = new Set<string>();
+  for (const c of c6) { const q = makeWritingQuestion(c, idx6, u); if (q && juku.includes(q.word)) jukuUsed++; }
+  check('熟字訓は書き取りに使わない', jukuUsed === 0, `つかわれた ${jukuUsed}語`);
+
+  // 校正していない熟語は使わない
+  let leakW = 0;
+  const u2 = new Set<string>();
+  for (const c of c6) { const q = makeWritingQuestion(c, idx6, u2); if (q && unverified.has(q.word)) leakW++; }
+  check('校正していない熟語は書き取りに出ない', leakW === 0, `もれ ${leakW}件`);
+
+  // 6級の問題に6年生の漢字が混ざらない
+  let outW = 0;
+  const u3 = new Set<string>();
+  for (const c of c6) {
+    const q = makeWritingQuestion(c, idx6, u3);
+    if (q && [...q.word].some((x) => g6.has(x))) outW++;
+  }
+  check('6級の書き取りに6年生の漢字が混ざらない', outW === 0, `混入 ${outW}件`);
+
+  // 例：どんな見た目になるか
+  const samples = ['税', '桜', 'faults'[0]].filter((c) => c && c6.includes(c));
+  for (const c of samples) {
+    const q = makeWritingQuestion(c, buildWordIndex(words, 6), new Set());
+    if (q) console.log(`    例）「${q.display}」（${q.wordReading}）→ こたえ「${q.answer}」`);
+  }
+}
+
 console.log('\n▶ テスト3　答え合わせ');
 check('ひらがなで正解', isCorrect(sample!, sample!.answer));
 check('カタカナでも正解になる', isCorrect(sample!, sample!.answer.replace(/[ぁ-ゖ]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) + 0x60))));
@@ -82,6 +141,26 @@ check('前後の空白は無視される', isCorrect(sample!, `  ${sample!.answe
 check('ちがう読みは不正解', !isCorrect(sample!, 'あいうえお'));
 check('空っぽは不正解', !isCorrect(sample!, ''));
 check('正規化', normalizeAnswer(' ゼイ キン ') === 'ぜいきん', normalizeAnswer(' ゼイ キン '));
+
+console.log('\n▶ テスト3b　承認していない熟語が出題されないこと');
+{
+  const notApproved = words.filter((w) => !w.verified);
+  check('確認まちの熟語は2語だけ（茨城・届出）', notApproved.length === 2,
+    notApproved.map((w) => `${w.w}(${w.r})`).join('、'));
+  const idxAll = buildWordIndex(words, 5);
+  const inIndex = notApproved.filter((w) =>
+    [...w.w].some((c) => (idxAll.get(c) ?? []).some((x) => x.w === w.w)),
+  );
+  check('確認まちの熟語は出題データに入っていない', inIndex.length === 0,
+    inIndex.map((w) => w.w).join('、'));
+  const approvedNow = ['小皿', '大皿', '新潟', '熊本', '小熊', '宮崎', '長崎', '川崎', '山梨', '梨花', '受賞', '大賞', '賞賛'];
+  const missing = approvedNow.filter((w) => !words.find((x) => x.w === w && x.verified));
+  check('保護者が承認した13語は出題される', missing.length === 0,
+    missing.length ? '出ていない：' + missing.join('、') : '13語すべて出題できる');
+  const blocked6 = c6.filter((c) => !(idx6.get(c)?.length));
+  check('6級は835字ぜんぶ出題できる', blocked6.length === 0,
+    blocked6.length ? '出せない：' + blocked6.join('') : '835字すべてOK');
+}
 
 console.log('\n▶ テスト4　復習の間隔（Leitner）');
 check('箱の間隔が 1/2/4/7/14日',

@@ -3,20 +3,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import kanjiData from './data/kanji.json';
 import wordsData from './data/words.json';
-import type { KanjiEntry, Progress, Question, Settings, TraceRecord, WordEntry } from './lib/types';
+import type {
+  KanjiEntry, Progress, Question, SelfGradeRecord, Settings, TraceRecord, WordEntry,
+} from './lib/types';
 import { DEFAULT_SETTINGS } from './lib/types';
 import {
-  addSession, isStorageAvailable, loadAllProgress, loadSessions, loadSettings, loadTraces,
-  saveProgressBatch, saveSettings, saveTraces, StorageError,
+  addSelfGrades, addSession, isStorageAvailable, loadAllProgress, loadSelfGrades, loadSessions,
+  loadSettings, loadTraces, saveProgressBatch, saveSettings, saveTraces, StorageError,
 } from './lib/db';
 import { applyAnswer, newProgress, pickForSession, summarize, toDateKey } from './lib/leitner';
-import { buildWordIndex, charsForKyu, collectReadings, makeReadingQuestion } from './lib/questions';
+import {
+  buildWordIndex, charsForKyu, collectReadings, makeReadingQuestion, makeWritingQuestion,
+  type WritingQuestion,
+} from './lib/questions';
 import { Home } from './screens/Home';
 import { Session } from './screens/Session';
 import { Result } from './screens/Result';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { BackupScreen } from './screens/BackupScreen';
 import { Tracing } from './screens/Tracing';
+import { Writing, type WritingResult } from './screens/Writing';
 import { preloadGrade } from './lib/strokeStore';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
@@ -26,6 +32,7 @@ const ALL_WORDS = (wordsData as { words: WordEntry[] }).words;
 type Screen =
   | 'loading' | 'home' | 'session' | 'result'
   | 'tracing' | 'tracingResult'
+  | 'writing' | 'writingResult'
   | 'settings' | 'backup';
 
 /** なぞり書き1回ぶんの字数 */
@@ -62,6 +69,9 @@ export default function App() {
   const [traces, setTraces] = useState<Map<string, TraceRecord>>(new Map());
   const [traceQueue, setTraceQueue] = useState<KanjiEntry[]>([]);
   const [traceResult, setTraceResult] = useState<{ traced: string[]; retries: number } | null>(null);
+  const [writingQuestions, setWritingQuestions] = useState<WritingQuestion[]>([]);
+  const [writingResults, setWritingResults] = useState<WritingResult[]>([]);
+  const [selfGrades, setSelfGrades] = useState<SelfGradeRecord[]>([]);
   const [todayAnswered, setTodayAnswered] = useState(0);
   const [sessionCount, setSessionCount] = useState(0);
   const [storageOk, setStorageOk] = useState(true);
@@ -77,12 +87,13 @@ export default function App() {
     try {
       const ok = await isStorageAvailable();
       setStorageOk(ok);
-      const [s, p, sess, tr] = await Promise.all([
-        loadSettings(), loadAllProgress(), loadSessions(), loadTraces(),
+      const [s, p, sess, tr, sg] = await Promise.all([
+        loadSettings(), loadAllProgress(), loadSessions(), loadTraces(), loadSelfGrades(),
       ]);
       setSettings(s);
       setProgressBoth(p);
       setTraces(tr);
+      setSelfGrades(sg);
       setSessionDates(sess.map((x) => x.date));
       setSessionCount(sess.length);
       const today = toDateKey();
@@ -112,6 +123,7 @@ export default function App() {
   /** 校正が済んだ熟語がある漢字だけが、いま出題できる */
   const canUse = useCallback((c: string) => (wordIndex.get(c)?.length ?? 0) > 0, [wordIndex]);
   const usableChars = useMemo(() => chars.filter(canUse), [chars, canUse]);
+  const kanjiByChar = useMemo(() => new Map(ALL_KANJI.map((k) => [k.c, k])), []);
   const summary = useMemo(() => summarize(chars, progress), [chars, progress]);
   const streak = useMemo(() => calcStreak(sessionDates), [sessionDates]);
 
@@ -145,22 +157,18 @@ export default function App() {
   // なぞり書きは「おぼえるための練習」なので、
   // 読みの復習の箱（Leitner）は動かしません。テストではないためです。
   function startTracing() {
-    const maxGrade = settings.kyu === 6 ? 5 : 6;
-    const pool = ALL_KANJI.filter((k) => k.grade <= maxGrade).sort(
-      (a, b) => a.grade - b.grade || a.order - b.order,
-    );
-    // ならべる順番:
-    //   1. なぞった回数が少ない字を先に（まだの字が最優先）
-    //   2. その級の新出範囲を先に（6級なら5年配当、5級なら6年配当）
-    //   3. そのあとは学年の高いほうから（むずかしい字を先に練習する）
-    //   ※「一」のような やさしい字から始めても、小学5年生には練習になりません
-    const sorted = [...pool].sort((a, b) => {
-      const ta = traces.get(a.c)?.times ?? 0;
-      const tb = traces.get(b.c)?.times ?? 0;
-      if (ta !== tb) return ta - tb;
-      if (a.grade !== b.grade) return b.grade - a.grade;
-      return a.order - b.order;
-    });
+    // 並べる順番は charsForKyu（学年の高いほうから）と同じ。
+    // そのうえで「まだなぞっていない字」を優先します。
+    const pool = chars.map((c) => kanjiByChar.get(c)).filter((k): k is KanjiEntry => !!k);
+    const sorted = pool
+      .map((k, i) => ({ k, i }))
+      .sort((a, b) => {
+        const ta = traces.get(a.k.c)?.times ?? 0;
+        const tb = traces.get(b.k.c)?.times ?? 0;
+        if (ta !== tb) return ta - tb;
+        return a.i - b.i;
+      })
+      .map((x) => x.k);
     const queue = sorted.slice(0, TRACE_SESSION_SIZE);
     if (queue.length === 0) {
       setLoadError('なぞれる かんじが 見つかりませんでした。');
@@ -207,6 +215,78 @@ export default function App() {
       setTraces(updated);
       setSessionDates((d) => [...d, toDateKey()]);
       setSessionCount((n) => n + 1);
+      setSaveError(null);
+    } catch (e) {
+      setSaveError(
+        e instanceof StorageError ? e.kidMessage : 'きろくの ほぞんに しっぱいしました。',
+      );
+    }
+  }
+
+  // ── 書き取り（自己採点）─────────────────────────
+  function startWriting() {
+    const picked = pickForSession({
+      candidates: chars,
+      progress,
+      size: settings.sessionSize,
+      canUse,
+    });
+    const used = new Set<string>();
+    const qs: WritingQuestion[] = [];
+    for (const c of picked.chars) {
+      const q = makeWritingQuestion(c, wordIndex, used);
+      if (q) qs.push(q);
+    }
+    if (qs.length === 0) {
+      setLoadError('いまは だせる もんだいが ありません。せっていで きゅうを かえてみてね。');
+      return;
+    }
+    setWritingQuestions(qs);
+    setWritingResults([]);
+    setStartedAt(Date.now());
+    setSaveError(null);
+    setScreen('writing');
+  }
+
+  async function finishWriting(res: WritingResult[]) {
+    setWritingResults(res);
+    setScreen('writingResult');
+    if (res.length === 0) return;
+    try {
+      // 「できた」だけを正解あつかいにする。
+      // 「おしい」も箱1に戻すのは、書けていない字を早めにもう一度出すため。
+      const next = new Map(progressRef.current);
+      for (const r of res) {
+        const cur = next.get(r.q.answer) ?? newProgress(r.q.answer);
+        next.set(r.q.answer, applyAnswer(cur, r.grade === 'ok'));
+      }
+      setProgressBoth(next);
+
+      const toSave = [...new Set(res.map((r) => r.q.answer))]
+        .map((c) => next.get(c))
+        .filter((p): p is Progress => !!p);
+      await saveProgressBatch(toSave);
+
+      const now = Date.now();
+      const today = toDateKey();
+      const grades: SelfGradeRecord[] = res.map((r) => ({
+        date: today, at: now, c: r.q.answer, word: r.q.word, grade: r.grade,
+      }));
+      await addSelfGrades(grades);
+      await addSession({
+        date: today,
+        startedAt,
+        finishedAt: now,
+        kyu: settings.kyu,
+        mode: 'writing',
+        total: res.length,
+        correct: res.filter((r) => r.grade === 'ok').length,
+        wrongChars: res.filter((r) => r.grade !== 'ok').map((r) => r.q.answer),
+      });
+      setSelfGrades((prev) => [...grades, ...prev]);
+      setSessionDates((d) => [...d, today]);
+      setSessionCount((n) => n + 1);
+      setTodayAnswered((n) => n + res.length);
       setSaveError(null);
     } catch (e) {
       setSaveError(
@@ -308,6 +388,7 @@ export default function App() {
           blockedCount={chars.length - usableChars.length}
           onStart={startSession}
           onStartTracing={startTracing}
+          onStartWriting={startWriting}
           tracedCount={traces.size}
           onOpenSettings={() => setScreen('settings')}
           onOpenBackup={() => setScreen('backup')}
@@ -364,6 +445,49 @@ export default function App() {
         </div>
       )}
 
+      {screen === 'writing' && (
+        <Writing
+          questions={writingQuestions}
+          kanjiByChar={kanjiByChar}
+          onFinish={(r) => void finishWriting(r)}
+          onQuit={() => setScreen('home')}
+        />
+      )}
+
+      {screen === 'writingResult' && (
+        <div className="app">
+          <div className="card center">
+            <h1>おつかれさま！</h1>
+            <p style={{ fontSize: 40, margin: '8px 0 0' }}>
+              <b>{writingResults.filter((r) => r.grade === 'ok').length}</b>
+              <span style={{ fontSize: 22, color: 'var(--ink-soft)' }}>
+                {' '}/ {writingResults.length}もん
+              </span>
+            </p>
+            <p className="muted">「できた」を えらんだ かず</p>
+          </div>
+          {saveError && <div className="notice bad">{saveError}</div>}
+          {writingResults.some((r) => r.grade !== 'ok') && (
+            <div className="card">
+              <h2>また あした でてくるよ</h2>
+              {writingResults
+                .filter((r) => r.grade !== 'ok')
+                .map((r, i) => (
+                  <p key={i} style={{ fontSize: 20, marginBottom: 6 }}>
+                    {r.q.answer}（{r.q.word}）
+                  </p>
+                ))}
+            </div>
+          )}
+          <button className="primary" onClick={() => setScreen('home')}>
+            ホームに もどる
+          </button>
+          <button className="ghost wide" style={{ marginTop: 8 }} onClick={startWriting}>
+            もう1かい やる
+          </button>
+        </div>
+      )}
+
       {screen === 'settings' && (
         <SettingsScreen
           settings={settings}
@@ -378,6 +502,7 @@ export default function App() {
           onBack={() => setScreen('home')}
           onDataChanged={() => void reload()}
           counts={{ progress: progress.size, sessions: sessionCount }}
+          selfGrades={selfGrades}
         />
       )}
     </ErrorBoundary>

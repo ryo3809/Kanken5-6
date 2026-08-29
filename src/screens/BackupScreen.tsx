@@ -3,7 +3,8 @@
 // iOS Safari は「ホーム画面に追加していないサイト」のデータを7日で消すことがあります。
 // この画面が無いと、消えたときに取り返しがつきません。
 
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import type { SelfGradeRecord } from '../lib/types';
 import { downloadBackup, restoreFromFile } from '../lib/backup';
 import { eraseAll } from '../lib/db';
 
@@ -11,16 +12,33 @@ interface Props {
   onBack: () => void;
   onDataChanged: () => void;
   counts: { progress: number; sessions: number };
+  /** 書き取りの自己採点の記録（新しい順） */
+  selfGrades: SelfGradeRecord[];
 }
+
+const GRADE_LABEL: Record<SelfGradeRecord['grade'], string> = {
+  ok: '⭕️ できた',
+  close: '△ おしい',
+  ng: '✗ まちがえた',
+};
 
 type Busy = null | 'export' | 'import' | 'erase';
 
-export function BackupScreen({ onBack, onDataChanged, counts }: Props) {
+export function BackupScreen({ onBack, onDataChanged, counts, selfGrades }: Props) {
   const [busy, setBusy] = useState<Busy>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [eraseStep, setEraseStep] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [showAllGrades, setShowAllGrades] = useState(false);
+
+  // 「できた」の割合。極端に高いときは、甘く採点している可能性がある
+  const gradeStats = useMemo(() => {
+    const n = selfGrades.length;
+    const ok = selfGrades.filter((g) => g.grade === 'ok').length;
+    const close = selfGrades.filter((g) => g.grade === 'close').length;
+    return { n, ok, close, ng: n - ok - close, okRate: n === 0 ? 0 : Math.round((ok / n) * 100) };
+  }, [selfGrades]);
 
   async function handleExport() {
     setBusy('export');
@@ -49,7 +67,8 @@ export function BackupScreen({ onBack, onDataChanged, counts }: Props) {
     try {
       const n = await restoreFromFile(file);
       setMessage(
-        `読みこみました（漢字の記録 ${n.progress}件 / 学習の記録 ${n.sessions}件 / なぞり書き ${n.traces}件）。`,
+        `読みこみました（漢字の記録 ${n.progress}件 / 学習の記録 ${n.sessions}件 / ` +
+          `なぞり書き ${n.traces}件 / 自己採点 ${n.selfGrades}件）。`,
       );
       onDataChanged();
     } catch (e) {
@@ -93,6 +112,61 @@ export function BackupScreen({ onBack, onDataChanged, counts }: Props) {
       {error && (
         <div className="notice bad" style={{ whiteSpace: 'pre-wrap' }}>
           {error}
+        </div>
+      )}
+
+      {selfGrades.length > 0 && (
+        <div className="card">
+          <h2>書き取りの自己採点</h2>
+          <p className="muted">
+            お子さんが自分で選んだ結果です。甘く採点していないかの確認にお使いください。
+          </p>
+          <div className="stats" style={{ marginBottom: 12 }}>
+            <div className="stat">
+              <b>{gradeStats.ok}</b>
+              <span>できた</span>
+            </div>
+            <div className="stat">
+              <b>{gradeStats.close}</b>
+              <span>おしい</span>
+            </div>
+            <div className="stat">
+              <b>{gradeStats.ng}</b>
+              <span>まちがえた</span>
+            </div>
+          </div>
+          <p className="muted">
+            「できた」の割合：<b>{gradeStats.okRate}%</b>（全{gradeStats.n}問）
+            {gradeStats.n >= 20 && gradeStats.okRate >= 95 && (
+              <>
+                <br />
+                ほぼ全問「できた」になっています。字を見くらべる目安が
+                ゆるくなっていないか、一度いっしょに確認してみてください。
+              </>
+            )}
+          </p>
+          <div className="gradelog">
+            {(showAllGrades ? selfGrades : selfGrades.slice(0, 12)).map((g, i) => (
+              <div className="row2" key={g.id ?? i}>
+                <span className="big">{g.c}</span>
+                <span>
+                  {g.word}
+                  <br />
+                  <span className="muted">{g.date}</span>
+                </span>
+                <span>{GRADE_LABEL[g.grade]}</span>
+              </div>
+            ))}
+          </div>
+          {selfGrades.length > 12 && (
+            <button
+              className="ghost wide"
+              style={{ marginTop: 10 }}
+              onClick={() => setShowAllGrades((v) => !v)}
+            >
+              {showAllGrades ? '最近の12件だけ表示' : `すべて表示（${selfGrades.length}件）`}
+            </button>
+          )}
         </div>
       )}
 

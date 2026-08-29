@@ -3,7 +3,9 @@
 // iOS Safari には「ホーム画面に追加していないサイトのデータを7日間で消す」仕組みがあります。
 // この機能が無いと、消えたときに取り返しがつきません。だから最初から作ってあります。
 
-import type { BackupFile, Progress, SessionRecord, Settings, TraceRecord } from './types';
+import type {
+  BackupFile, Progress, SelfGradeRecord, SessionRecord, Settings, TraceRecord,
+} from './types';
 import { DEFAULT_SETTINGS } from './types';
 import { exportAll, importAll } from './db';
 
@@ -81,6 +83,16 @@ export function validateBackup(raw: unknown): BackupFile {
           !!t && typeof t.c === 'string' && t.c.length === 1 && typeof t.times === 'number',
       )
     : [];
+  // 自己採点の記録も、古いバックアップには入っていないので無くてもよい
+  const selfGrades: SelfGradeRecord[] = Array.isArray(o.selfGrades)
+    ? o.selfGrades.filter(
+        (g): g is SelfGradeRecord =>
+          !!g &&
+          typeof g.c === 'string' &&
+          typeof g.date === 'string' &&
+          (g.grade === 'ok' || g.grade === 'close' || g.grade === 'ng'),
+      )
+    : [];
   const settings: Settings = { ...DEFAULT_SETTINGS, ...(o.settings ?? {}) };
 
   if (progress.length === 0 && sessions.length === 0) {
@@ -93,6 +105,7 @@ export function validateBackup(raw: unknown): BackupFile {
     progress,
     sessions,
     traces,
+    selfGrades,
     settings,
   };
 }
@@ -100,7 +113,7 @@ export function validateBackup(raw: unknown): BackupFile {
 /** ファイルを読みこんで復元する。件数を返す */
 export async function restoreFromFile(
   file: File,
-): Promise<{ progress: number; sessions: number; traces: number }> {
+): Promise<{ progress: number; sessions: number; traces: number; selfGrades: number }> {
   let text: string;
   try {
     text = await file.text();
@@ -118,11 +131,13 @@ export async function restoreFromFile(
     progress: data.progress,
     sessions: data.sessions,
     traces: data.traces,
+    selfGrades: data.selfGrades,
     settings: data.settings,
   });
   return {
     progress: data.progress.length,
     sessions: data.sessions.length,
     traces: data.traces?.length ?? 0,
+    selfGrades: data.selfGrades?.length ?? 0,
   };
 }

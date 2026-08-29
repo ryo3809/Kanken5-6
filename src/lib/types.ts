@@ -76,11 +76,31 @@ export interface SessionRecord {
   finishedAt: number;
   kyu: Kyu;
   /** 出した問題の分野 */
-  mode: 'reading' | 'tracing';
+  mode: 'reading' | 'tracing' | 'writing';
   total: number;
   correct: number;
   /** まちがえた漢字 */
   wrongChars: string[];
+}
+
+/** 書き取りの自己採点。子どもが自分で選んだ結果 */
+export type SelfGrade = 'ok' | 'close' | 'ng';
+
+/**
+ * 自己採点の1件ぶんの記録。
+ * 保護者が「甘く採点していないか」をあとから確認するために残します。
+ */
+export interface SelfGradeRecord {
+  id?: number;
+  /** 日付（YYYY-MM-DD） */
+  date: string;
+  at: number;
+  /** 書かせた漢字 */
+  c: string;
+  /** 出した熟語 */
+  word: string;
+  /** 子どもが選んだ結果 */
+  grade: SelfGrade;
 }
 
 /** なぞり書きの記録。漢字ごとに、なぞった回数を数える */
@@ -137,5 +157,6 @@ export interface BackupFile {
   progress: Progress[];
   sessions: SessionRecord[];
   traces?: TraceRecord[];
+  selfGrades?: SelfGradeRecord[];
   settings: Settings;
 }
