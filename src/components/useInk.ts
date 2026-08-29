@@ -23,9 +23,18 @@ interface Options {
   color: string;
   /** 書けない状態にする */
   disabled?: boolean;
+  /**
+   * 最初に出しておく線（模擬試験で前の問題にもどったとき、書いた字を出すため）。
+   * 座標は 109×109 のマス目。
+   */
+  replay?: Point[][];
+  /** 線が増えたり減ったりしたときに呼ばれる（座標は 109×109 のマス目） */
+  onStrokesChange?: (strokes: Point[][]) => void;
 }
 
-export function useInk({ onStrokeEnd, clearOnStart, color, disabled }: Options) {
+export function useInk({
+  onStrokeEnd, clearOnStart, color, disabled, replay, onStrokesChange,
+}: Options) {
   const boxRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [drawing, setDrawing] = useState(false);
@@ -69,6 +78,7 @@ export function useInk({ onStrokeEnd, clearOnStart, color, disabled }: Options) 
     return () => ro.disconnect();
   }, [fitCanvas]);
 
+
   /** キャンバスを白紙にする（覚えている線は消さない） */
   const wipeCanvas = useCallback(() => {
     const cv = canvasRef.current;
@@ -79,6 +89,8 @@ export function useInk({ onStrokeEnd, clearOnStart, color, disabled }: Options) 
     ctx.clearRect(0, 0, cv.width, cv.height);
     ctx.restore();
   }, []);
+
+  const redrawRef = useRef<(() => void) | null>(null);
 
   /** 覚えている線を、ぜんぶ描き直す */
   const redraw = useCallback(() => {
@@ -96,6 +108,7 @@ export function useInk({ onStrokeEnd, clearOnStart, color, disabled }: Options) 
       ctx.stroke();
     }
   }, [color, wipeCanvas]);
+  redrawRef.current = redraw;
 
   /** 書いた線をぜんぶ消す */
   const clearInk = useCallback(() => {
@@ -103,14 +116,52 @@ export function useInk({ onStrokeEnd, clearOnStart, color, disabled }: Options) 
     ptsRef.current = [];
     strokesRef.current = [];
     setStrokeCount(0);
-  }, [wipeCanvas]);
+    onStrokesChange?.([]);
+  }, [wipeCanvas, onStrokesChange]);
+
+  /** 画面の座標 → 109×109 のマス目 */
+  const toKvg = useCallback((strokes: Point[][]): Point[][] => {
+    const r = boxRef.current?.getBoundingClientRect();
+    if (!r) return [];
+    const size = Math.min(r.width, r.height);
+    const offX = (r.width - size) / 2;
+    const offY = (r.height - size) / 2;
+    const k = 109 / size;
+    return strokes.map((st) => st.map((p) => ({ x: (p.x - offX) * k, y: (p.y - offY) * k })));
+  }, []);
+
+  /** 109×109 のマス目 → 画面の座標 */
+  const fromKvg = useCallback((strokes: Point[][]): Point[][] => {
+    const r = boxRef.current?.getBoundingClientRect();
+    if (!r) return [];
+    const size = Math.min(r.width, r.height);
+    const offX = (r.width - size) / 2;
+    const offY = (r.height - size) / 2;
+    const k = size / 109;
+    return strokes.map((st) => st.map((p) => ({ x: offX + p.x * k, y: offY + p.y * k })));
+  }, []);
+
+  // 前に書いた線があれば、出しておく（模擬試験で前の問題にもどったとき）
+  const replayedRef = useRef(false);
+  useEffect(() => {
+    if (replayedRef.current || !replay || replay.length === 0) return;
+    replayedRef.current = true;
+    // マスの大きさが決まってから描く
+    const id = window.setTimeout(() => {
+      strokesRef.current = fromKvg(replay);
+      setStrokeCount(strokesRef.current.length);
+      redrawRef.current?.();
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [replay, fromKvg]);
 
   /** さいごに書いた1画だけ消す */
   const undoStroke = useCallback(() => {
     strokesRef.current = strokesRef.current.slice(0, -1);
     setStrokeCount(strokesRef.current.length);
     redraw();
-  }, [redraw]);
+    onStrokesChange?.(toKvg(strokesRef.current));
+  }, [redraw, onStrokesChange, toKvg]);
 
   function localPoint(e: React.PointerEvent): Point {
     const r = rectRef.current ?? boxRef.current?.getBoundingClientRect();
@@ -194,6 +245,7 @@ export function useInk({ onStrokeEnd, clearOnStart, color, disabled }: Options) 
     if (!clearOnStart) {
       // 書き取りのように何画も書くときは、1本ずつ覚えておく（あとで1画もどせるように）
       strokesRef.current = [...strokesRef.current, pts];
+      onStrokesChange?.(toKvg(strokesRef.current));
     }
     setStrokeCount((n) => n + 1);
     onStrokeEnd(pts, { width: r.width, height: r.height });

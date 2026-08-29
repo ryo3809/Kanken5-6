@@ -18,11 +18,42 @@ export interface KanjiEntry {
   on: { kana: string; examples: string[] }[];
   kun: { kana: string; stem: string | null; okurigana: string | null; examples: string[] }[];
   ijidokun: string[];
-  /** 部首の候補（KanjiVGからの推定。校正が済むまで出題に使わない） */
+  /** 部首（出どころ：KANJIDIC2 の康熙214部首） */
   radical: string | null;
-  radicalOriginal: string | null;
+  /** 部首の名前（出どころ：『漢検漢字辞典』の部首一覧）。例：のぎ、さんずい */
   radicalName: string | null;
+  /** 康熙部首の番号（1〜214） */
+  radicalNumber: number | null;
+  /** 部首の出どころ */
+  radicalSource?: string | null;
+  /** どうやって確かめたか */
+  radicalNote?: string;
+  /** 出題してよいか（2つの出典で裏が取れたもの、または保護者が確認したもの） */
   radicalVerified: boolean;
+}
+
+/** 対義語・類義語の1組（src/data/pairs.json） */
+export interface PairEntry {
+  /** tai=対義語 / rui=類義語 */
+  kind: 'tai' | 'rui';
+  a: string;
+  b: string;
+  /** それぞれの読み */
+  ra: string;
+  rb: string;
+  lv: Kyu;
+  /** 保護者の確認が済んでいるか。false のあいだは出題しない */
+  verified: boolean;
+}
+
+/** 熟語の構成（src/data/kozo.json） */
+export interface KozoEntry {
+  w: string;
+  r: string;
+  /** ア〜エ */
+  type: 'ア' | 'イ' | 'ウ' | 'エ';
+  lv: Kyu;
+  verified: boolean;
 }
 
 /** 熟語1語ぶんのデータ（src/data/words.json の中身） */
@@ -43,6 +74,10 @@ export interface WordEntry {
   alt?: string[];
   /** 熟字訓（今日＝きょう など）か */
   jukujikun?: boolean;
+  /** 何字の熟語か（2／3／4） */
+  n?: number;
+  /** 辞典が「四字熟語」と分類しているか */
+  yoji?: boolean;
   /** 校正済みか。false のものは出題しない */
   verified: boolean;
 }
@@ -64,6 +99,27 @@ export interface Progress {
   wrong: number;
   /** 最後に答えた日時（ミリ秒） */
   lastAnsweredAt: number;
+}
+
+/** 模擬試験の1回ぶんの記録 */
+export interface ExamResult {
+  id?: number;
+  /** 日付（YYYY-MM-DD） */
+  date: string;
+  at: number;
+  kyu: Kyu;
+  /** とれた点 */
+  score: number;
+  /** この模試の満点（確認まちの分野をのぞいた点数） */
+  total: number;
+  /** 本番の満点（いつも200） */
+  fullTotal: number;
+  /** かかった時間（秒） */
+  seconds: number;
+  /** 時間切れで終わったか */
+  timedOut: boolean;
+  /** 大問ごとの点 */
+  sections: { no: string; title: string; score: number; points: number }[];
 }
 
 /** 1回の学習の記録 */
@@ -175,6 +231,7 @@ export interface BackupFile {
   sessions: SessionRecord[];
   traces?: TraceRecord[];
   selfGrades?: SelfGradeRecord[];
+  exams?: ExamResult[];
   game?: GameState;
   settings: Settings;
 }

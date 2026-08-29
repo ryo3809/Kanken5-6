@@ -3,14 +3,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import kanjiData from './data/kanji.json';
 import wordsData from './data/words.json';
+import pairsData from './data/pairs.json';
+import kozoData from './data/kozo.json';
 import type {
-  GameState, KanjiEntry, Progress, Question, SelfGradeRecord, Settings, TraceRecord, WordEntry,
+  ExamResult, GameState, KanjiEntry, KozoEntry, PairEntry, Progress, Question, SelfGradeRecord,
+  Settings, TraceRecord, WordEntry,
 } from './lib/types';
 import { DEFAULT_GAME, DEFAULT_SETTINGS } from './lib/types';
 import {
-  addSelfGrades, addSession, isStorageAvailable, loadAllProgress, loadGame, loadSelfGrades,
-  loadSessions, loadSettings, loadTraces, saveGame, saveProgressBatch, saveSettings, saveTraces,
-  StorageError,
+  addExamResult, addSelfGrades, addSession, isStorageAvailable, loadAllProgress, loadExamResults,
+  loadGame, loadSelfGrades, loadSessions, loadSettings, loadTraces, saveGame, saveProgressBatch,
+  saveSettings, saveTraces, StorageError,
 } from './lib/db';
 import { applyAnswer, newProgress, pickForSession, summarize, toDateKey } from './lib/leitner';
 import {
@@ -29,6 +32,10 @@ import { EXP, levelFromExp, mapProgress, MAP_SPOTS, unlockedItems } from './lib/
 import { MapScreen } from './screens/MapScreen';
 import { DressupScreen } from './screens/DressupScreen';
 import { ZukanScreen } from './screens/ZukanScreen';
+import { buildExam, isAutoScored, type Exam } from './lib/exam';
+import { ExamScreen, autoScore, type ExamAnswer } from './screens/ExamScreen';
+import { ExamGrading } from './screens/ExamGrading';
+import { ExamResultScreen, passLine } from './screens/ExamResultScreen';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Shibamaru } from './character/Shibamaru';
 import { ITEM_BY_ID } from './character/items';
@@ -64,12 +71,15 @@ function RewardNews({
 
 const ALL_KANJI = (kanjiData as { kanji: KanjiEntry[] }).kanji;
 const ALL_WORDS = (wordsData as { words: WordEntry[] }).words;
+const ALL_PAIRS = (pairsData as { pairs: PairEntry[] }).pairs;
+const ALL_KOZO = (kozoData as { kozo: KozoEntry[] }).kozo;
 
 type Screen =
   | 'loading' | 'home' | 'session' | 'result'
   | 'tracing' | 'tracingResult'
   | 'writing' | 'writingResult'
   | 'map' | 'zukan' | 'dressup'
+  | 'examIntro' | 'exam' | 'examGrading' | 'examResult'
   | 'settings' | 'backup';
 
 /** なぞり書き1回ぶんの字数 */
@@ -94,6 +104,11 @@ export default function App() {
   const [writingResults, setWritingResults] = useState<WritingResult[]>([]);
   const [selfGrades, setSelfGrades] = useState<SelfGradeRecord[]>([]);
   const [game, setGame] = useState<GameState>(DEFAULT_GAME);
+  const [exam, setExam] = useState<Exam | null>(null);
+  const [examAnswers, setExamAnswers] = useState<Map<string, ExamAnswer>>(new Map());
+  const [examMeta, setExamMeta] = useState<{ seconds: number; timedOut: boolean }>({ seconds: 0, timedOut: false });
+  const [examResult, setExamResult] = useState<ExamResult | null>(null);
+  const [examHistory, setExamHistory] = useState<ExamResult[]>([]);
   // 画面の再描画を待たずに、いつでも最新のしばまるの状態を読めるようにしておく。
   // （フェーズ2で、古い値を読んで二重に計算する不具合が出たため、同じ作りにしています）
   const gameRef = useRef<GameState>(DEFAULT_GAME);
@@ -120,9 +135,11 @@ export default function App() {
     try {
       const ok = await isStorageAvailable();
       setStorageOk(ok);
-      const [s, p, sess, tr, sg, gm] = await Promise.all([
-        loadSettings(), loadAllProgress(), loadSessions(), loadTraces(), loadSelfGrades(), loadGame(),
+      const [s, p, sess, tr, sg, gm, ex] = await Promise.all([
+        loadSettings(), loadAllProgress(), loadSessions(), loadTraces(), loadSelfGrades(),
+        loadGame(), loadExamResults(),
       ]);
+      setExamHistory(ex);
       setSettings(s);
       setProgressBoth(p);
       setTraces(tr);
@@ -185,6 +202,82 @@ export default function App() {
     setStartedAt(Date.now());
     setSaveError(null);
     setScreen('session');
+  }
+
+  // ── 模擬試験 ────────────────────────────────────
+  function prepareExam() {
+    const e = buildExam(settings.kyu, {
+      kanji: ALL_KANJI, words: ALL_WORDS, pairs: ALL_PAIRS, kozo: ALL_KOZO,
+    });
+    setExam(e);
+    setExamAnswers(new Map());
+    setExamResult(null);
+    setSaveError(null);
+    setScreen('examIntro');
+  }
+
+  function startExam() {
+    setRewardNews(null);
+    setScreen('exam');
+  }
+
+  /** 受験がおわったところ。手書きの問題があれば「まるつけ」へ */
+  function afterExam(answers: Map<string, ExamAnswer>, seconds: number, timedOut: boolean) {
+    setExamAnswers(answers);
+    setExamMeta({ seconds, timedOut });
+    const needGrading = (exam?.sections ?? [])
+      .flatMap((s) => s.questions)
+      .filter((q) => !isAutoScored(q));
+    if (needGrading.length > 0) setScreen('examGrading');
+    else void scoreExam(answers, new Set(), seconds, timedOut);
+  }
+
+  /** 採点して記録する */
+  async function scoreExam(
+    answers: Map<string, ExamAnswer>,
+    handCorrect: Set<string>,
+    seconds: number,
+    timedOut: boolean,
+  ) {
+    if (!exam) return;
+    const sections = exam.sections.map((s) => {
+      let score = 0;
+      for (const q of s.questions) {
+        const ok = isAutoScored(q) ? autoScore(q, answers.get(q.id)) : handCorrect.has(q.id);
+        if (ok) score += q.points;
+      }
+      return { no: s.no, title: s.title, score, points: s.points };
+    });
+    const total = sections.reduce((n, s) => n + s.points, 0);
+    const score = sections.reduce((n, s) => n + s.score, 0);
+    const now = Date.now();
+    const rec: ExamResult = {
+      date: toDateKey(), at: now, kyu: settings.kyu,
+      score, total, fullTotal: exam.fullPoints, seconds, timedOut, sections,
+    };
+    setExamResult(rec);
+    setScreen('examResult');
+
+    try {
+      await addExamResult(rec);
+      await addSession({
+        date: toDateKey(), startedAt: now - seconds * 1000, finishedAt: now,
+        kyu: settings.kyu, mode: 'reading',
+        total: exam.sections.reduce((n, s) => n + s.questions.length, 0),
+        correct: 0, wrongChars: [],
+      });
+      setExamHistory((h) => [...h, rec]);
+      const first = isFirstOfDay();
+      setSessionDates((d) => [...d, toDateKey()]);
+      setSessionCount((n) => n + 1);
+      setSaveError(null);
+      // 模試は がんばりが大きいので、多めに経験値をあげる
+      await addExp(40 + Math.round(score / 2), { firstOfDay: first });
+    } catch (e) {
+      setSaveError(
+        e instanceof StorageError ? e.kidMessage : 'もぎしけんの きろくを ほぞんできませんでした。',
+      );
+    }
   }
 
   // ── しばまる（経験値・ごほうび）────────────────────
@@ -491,6 +584,9 @@ export default function App() {
           onOpenMap={() => setScreen('map')}
           onOpenZukan={() => setScreen('zukan')}
           onOpenDressup={() => setScreen('dressup')}
+          onOpenExam={prepareExam}
+          examBest={examHistory.length === 0 ? null : Math.max(...examHistory.map((e) => e.score))}
+          examCount={examHistory.length}
           tracedCount={traces.size}
           onOpenSettings={() => setScreen('settings')}
           onOpenBackup={() => setScreen('backup')}
@@ -626,6 +722,91 @@ export default function App() {
           game={game}
           onChange={(g) => void changeGame(g)}
           onBack={() => setScreen('home')}
+        />
+      )}
+
+      {screen === 'examIntro' && exam && (
+        <div className="app">
+          <h1>もぎしけん</h1>
+          <div className="card">
+            <p>
+              本番と おなじ ならびで、<b>{exam.totalPoints}点満点</b>・
+              <b>{exam.minutes}分</b> です。
+            </p>
+            <p className="muted">
+              合格ラインは {passLine(exam.totalPoints)}点（満点の70%）。
+              {exam.totalPoints < exam.fullPoints && (
+                <>
+                  <br />
+                  本番は {exam.fullPoints}点満点で、{Math.round(exam.fullPoints * 0.7)}点前後が
+                  合格ラインです。
+                </>
+              )}
+            </p>
+            <div className="secbars" style={{ marginTop: 12 }}>
+              {exam.sections.map((s) => (
+                <div className="secbar" key={s.no}>
+                  <span className="name">{s.no} {s.title}</span>
+                  <span />
+                  <span className="num">{s.points}点</span>
+                </div>
+              ))}
+            </div>
+            {exam.skipped.length > 0 && (
+              <div className="notice" style={{ marginTop: 12 }}>
+                <b>いま 出せない 大問</b>
+                <br />
+                {exam.skipped.map((s) => (
+                  <span key={s.no}>
+                    {s.no} {s.title}（{s.points}点）… {s.why}
+                    <br />
+                  </span>
+                ))}
+                <span className="muted">
+                  おうちの人が data/approvals/ の CSV を かくにんすると 出るようになります。
+                </span>
+              </div>
+            )}
+          </div>
+          <div className="card">
+            <p className="muted">
+              とちゅうで まえの もんだいに もどれます。
+              かんじを 書く もんだいは、さいごに じぶんで まるつけします。
+            </p>
+            <button className="primary" onClick={startExam}>
+              はじめる
+            </button>
+          </div>
+          <button className="ghost wide" onClick={() => setScreen('home')}>
+            やめて ホームに もどる
+          </button>
+        </div>
+      )}
+
+      {screen === 'exam' && exam && (
+        <ExamScreen exam={exam} onFinish={afterExam} onQuit={() => setScreen('home')} />
+      )}
+
+      {screen === 'examGrading' && exam && (
+        <ExamGrading
+          items={exam.sections
+            .flatMap((s) => s.questions)
+            .filter((q) => !isAutoScored(q))
+            .map((q) => ({ q, a: examAnswers.get(q.id) }))}
+          onDone={(correct) =>
+            void scoreExam(examAnswers, correct, examMeta.seconds, examMeta.timedOut)
+          }
+        />
+      )}
+
+      {screen === 'examResult' && examResult && (
+        <ExamResultScreen
+          result={examResult}
+          history={examHistory}
+          game={game}
+          saveError={saveError}
+          onHome={() => setScreen('home')}
+          onAgain={prepareExam}
         />
       )}
 

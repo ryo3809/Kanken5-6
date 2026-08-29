@@ -16,13 +16,15 @@
     "typecheck": "tsc --noEmit",
     "test:logic": "node --experimental-strip-types --no-warnings scripts/test/logic-test.mts",
     "test:browser": "node scripts/test/browser-test.mjs",
-    "test": "npm run test:logic && npm run test:tracing && npm run test:game && npm run build && npm run test:browser && npm run test:browser-tracing && npm run test:browser-writing && npm run test:browser-game",
+    "test": "npm run test:logic && npm run test:tracing && npm run test:game && npm run test:exam && npm run build && npm run test:browser && npm run test:browser-tracing && npm run test:browser-writing && npm run test:browser-game && npm run test:browser-exam",
     "test:tracing": "node --experimental-strip-types --no-warnings scripts/test/tracing-test.mts",
     "test:browser-tracing": "node scripts/test/tracing-browser-test.mjs",
     "test:browser-writing": "node scripts/test/writing-browser-test.mjs",
     "test:game": "node --experimental-strip-types --no-warnings scripts/test/game-test.mts",
     "test:browser-game": "node scripts/test/game-browser-test.mjs",
-    "shiba:sheet": "node scripts/test/shiba-sheet.mjs"
+    "shiba:sheet": "node scripts/test/shiba-sheet.mjs",
+    "test:exam": "node --experimental-strip-types --no-warnings scripts/test/exam-test.mts",
+    "test:browser-exam": "node scripts/test/exam-browser-test.mjs"
   },
   "dependencies": {
     "idb": "^8.0.3",

@@ -10,13 +10,13 @@
 
 import { openDB, type IDBPDatabase } from 'idb';
 import type {
-  GameState, Progress, SelfGradeRecord, SessionRecord, Settings, TraceRecord,
+  ExamResult, GameState, Progress, SelfGradeRecord, SessionRecord, Settings, TraceRecord,
 } from './types';
 import { DEFAULT_GAME } from './types';
 import { DEFAULT_SETTINGS } from './types';
 
 const DB_NAME = 'kanken-5-6';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 export const STORE = {
   progress: 'progress',
@@ -25,6 +25,7 @@ export const STORE = {
   traces: 'traces',
   selfGrades: 'selfGrades',
   game: 'game',
+  exams: 'exams',
 } as const;
 
 /** 保存まわりで起きた問題を、子どもにも分かる日本語で表す */
@@ -80,6 +81,11 @@ function getDb(): Promise<IDBPDatabase> {
         }
         // 書き取りの自己採点の記録（版3で追加）。
         // 保護者があとから確認するために残します。
+        // 模擬試験の結果（版5で追加）
+        if (!db.objectStoreNames.contains(STORE.exams)) {
+          const ex = db.createObjectStore(STORE.exams, { keyPath: 'id', autoIncrement: true });
+          ex.createIndex('date', 'date');
+        }
         // しばまるとゲーム要素（版4で追加）
         if (!db.objectStoreNames.contains(STORE.game)) {
           db.createObjectStore(STORE.game);
@@ -216,6 +222,27 @@ export async function loadSelfGrades(): Promise<SelfGradeRecord[]> {
   }
 }
 
+// ─── 模擬試験の結果 ────────────────────────────────────────
+
+export async function addExamResult(rec: ExamResult): Promise<void> {
+  try {
+    const db = await getDb();
+    await db.add(STORE.exams, rec);
+  } catch (e) {
+    throw new StorageError(toKidMessage(e), e);
+  }
+}
+
+export async function loadExamResults(): Promise<ExamResult[]> {
+  try {
+    const db = await getDb();
+    const all: ExamResult[] = await db.getAll(STORE.exams);
+    return all.sort((a, b) => a.at - b.at); // 古い順（グラフに使う）
+  } catch {
+    return [];
+  }
+}
+
 // ─── しばまる・ゲーム要素 ──────────────────────────────────
 
 export async function loadGame(): Promise<GameState> {
@@ -269,19 +296,21 @@ export async function exportAll(): Promise<{
   sessions: SessionRecord[];
   traces: TraceRecord[];
   selfGrades: SelfGradeRecord[];
+  exams: ExamResult[];
   game: GameState;
   settings: Settings;
 }> {
   const db = await getDb();
-  const [progress, sessions, traces, selfGrades, game, settings] = await Promise.all([
+  const [progress, sessions, traces, selfGrades, exams, game, settings] = await Promise.all([
     db.getAll(STORE.progress) as Promise<Progress[]>,
     db.getAll(STORE.sessions) as Promise<SessionRecord[]>,
     db.getAll(STORE.traces) as Promise<TraceRecord[]>,
     db.getAll(STORE.selfGrades) as Promise<SelfGradeRecord[]>,
+    db.getAll(STORE.exams) as Promise<ExamResult[]>,
     loadGame(),
     loadSettings(),
   ]);
-  return { progress, sessions, traces, selfGrades, game, settings };
+  return { progress, sessions, traces, selfGrades, exams, game, settings };
 }
 
 /**
@@ -295,19 +324,22 @@ export async function importAll(data: {
   sessions: SessionRecord[];
   traces?: TraceRecord[];
   selfGrades?: SelfGradeRecord[];
+  exams?: ExamResult[];
   game?: GameState;
   settings: Settings;
 }): Promise<void> {
   try {
     const db = await getDb();
     const tx = db.transaction(
-      [STORE.progress, STORE.sessions, STORE.traces, STORE.selfGrades, STORE.game, STORE.settings],
+      [STORE.progress, STORE.sessions, STORE.traces, STORE.selfGrades, STORE.exams,
+        STORE.game, STORE.settings],
       'readwrite',
     );
     const pStore = tx.objectStore(STORE.progress);
     const sStore = tx.objectStore(STORE.sessions);
     const tStore = tx.objectStore(STORE.traces);
     const gStore = tx.objectStore(STORE.selfGrades);
+    const eStore = tx.objectStore(STORE.exams);
     const mStore = tx.objectStore(STORE.game);
     const cStore = tx.objectStore(STORE.settings);
 
@@ -320,7 +352,13 @@ export async function importAll(data: {
       sStore.clear(),
       tStore.clear(),
       gStore.clear(),
+      eStore.clear(),
       ...data.progress.map((p) => pStore.put(p)),
+      ...(data.exams ?? []).map((e) => {
+        const { id: _drop, ...rest } = e;
+        void _drop;
+        return eStore.put(rest as ExamResult);
+      }),
       ...(data.traces ?? []).map((t) => tStore.put(t)),
       ...(data.selfGrades ?? []).map((g) => {
         const { id: _drop, ...rest } = g;
@@ -351,7 +389,8 @@ export async function eraseAll(): Promise<void> {
   try {
     const db = await getDb();
     const tx = db.transaction(
-      [STORE.progress, STORE.sessions, STORE.traces, STORE.selfGrades, STORE.game, STORE.settings],
+      [STORE.progress, STORE.sessions, STORE.traces, STORE.selfGrades, STORE.exams,
+        STORE.game, STORE.settings],
       'readwrite',
     );
     await Promise.all([
@@ -359,6 +398,7 @@ export async function eraseAll(): Promise<void> {
       tx.objectStore(STORE.sessions).clear(),
       tx.objectStore(STORE.traces).clear(),
       tx.objectStore(STORE.selfGrades).clear(),
+      tx.objectStore(STORE.exams).clear(),
       tx.objectStore(STORE.game).clear(),
       tx.objectStore(STORE.settings).clear(),
     ]);

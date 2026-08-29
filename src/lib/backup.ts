@@ -4,7 +4,7 @@
 // この機能が無いと、消えたときに取り返しがつきません。だから最初から作ってあります。
 
 import type {
-  BackupFile, GameState, Progress, SelfGradeRecord, SessionRecord, Settings, TraceRecord,
+  BackupFile, ExamResult, GameState, Progress, SelfGradeRecord, SessionRecord, Settings, TraceRecord,
 } from './types';
 import { DEFAULT_GAME, DEFAULT_SETTINGS } from './types';
 import { exportAll, importAll } from './db';
@@ -93,6 +93,14 @@ export function validateBackup(raw: unknown): BackupFile {
           (g.grade === 'ok' || g.grade === 'close' || g.grade === 'ng'),
       )
     : [];
+  // 模擬試験の結果。古いバックアップには入っていないので無くてもよい
+  const exams: ExamResult[] = Array.isArray(o.exams)
+    ? o.exams.filter(
+        (e): e is ExamResult =>
+          !!e && typeof e.date === 'string' && typeof e.score === 'number' &&
+          typeof e.total === 'number' && Array.isArray(e.sections),
+      )
+    : [];
   // しばまるの状態。古いバックアップには入っていないので無くてもよい
   const game: GameState = {
     ...DEFAULT_GAME,
@@ -113,6 +121,7 @@ export function validateBackup(raw: unknown): BackupFile {
     sessions,
     traces,
     selfGrades,
+    exams,
     game,
     settings,
   };
@@ -121,7 +130,9 @@ export function validateBackup(raw: unknown): BackupFile {
 /** ファイルを読みこんで復元する。件数を返す */
 export async function restoreFromFile(
   file: File,
-): Promise<{ progress: number; sessions: number; traces: number; selfGrades: number }> {
+): Promise<{
+  progress: number; sessions: number; traces: number; selfGrades: number; exams: number;
+}> {
   let text: string;
   try {
     text = await file.text();
@@ -140,6 +151,7 @@ export async function restoreFromFile(
     sessions: data.sessions,
     traces: data.traces,
     selfGrades: data.selfGrades,
+    exams: data.exams,
     game: data.game,
     settings: data.settings,
   });
@@ -148,5 +160,6 @@ export async function restoreFromFile(
     sessions: data.sessions.length,
     traces: data.traces?.length ?? 0,
     selfGrades: data.selfGrades?.length ?? 0,
+    exams: data.exams?.length ?? 0,
   };
 }

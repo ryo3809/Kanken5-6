@@ -239,8 +239,12 @@ label.field .control button[aria-pressed='true'] {
 }
 .tracebox .ink { pointer-events: none; }
 
-.guide .grid-outer { fill: none; stroke: #efe9dc; stroke-width: 1; }
-.guide .grid-inner { stroke: #f2ece0; stroke-width: 1; stroke-dasharray: 3 3; }
+/* マス目（田の字）。
+   なぞり書き・書き取り・模擬試験のどこで使っても同じ見た目になるよう、
+   .guide の中だけでなく、どこでも効く指定にしています。
+   （fill を指定しないと、SVGの決まりで まっ黒に ぬりつぶされます） */
+.grid-outer { fill: none; stroke: #efe9dc; stroke-width: 1; }
+.grid-inner { fill: none; stroke: #f2ece0; stroke-width: 1; stroke-dasharray: 3 3; }
 
 .guide path {
   fill: none;
@@ -487,4 +491,95 @@ label.field .control button[aria-pressed='true'] {
 @keyframes draw { to { stroke-dashoffset: 0; } }
 @media (prefers-reduced-motion: reduce) {
   .anim-stroke { stroke-dashoffset: 0; animation: none; }
+}
+
+/* ───── 模擬試験 ───── */
+
+.examtop {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 15px;
+}
+.timer {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 99px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+}
+/* のこり5分を切ったら色を変える。ただし点滅などで急かす演出はしない */
+.timer.soon { color: var(--ng); border-color: var(--ng); }
+
+.examprompt {
+  font-size: clamp(40px, 12vw, 72px);
+  line-height: 1.25;
+  text-align: center;
+  letter-spacing: 0.06em;
+  margin: 6px 0 2px;
+  font-weight: 500;
+}
+.choices button.picked {
+  background: var(--accent);
+  border-color: var(--accent-dark);
+  color: #fff;
+  font-weight: 700;
+}
+/* 熟語の構成などの長い選択肢は、左よせで読みやすく */
+.choices button { text-align: left; line-height: 1.5; padding: 12px 16px; }
+
+/* 筆順の問題（1画だけ太く見せる） */
+.strokehl { width: min(280px, 70vw); margin: 0 auto; }
+.strokehl svg { width: 100%; display: block; }
+.hl-stroke {
+  fill: none;
+  stroke: #cfc7b8;
+  stroke-width: 4.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.hl-stroke.on { stroke: var(--ink); stroke-width: 8; }
+
+/* まるつけ（自分の字とお手本をならべる） */
+.gradepair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.tracebox.small { min-width: 0; max-width: 100%; background: #fff; }
+.tracebox.small svg { position: static; width: 100%; height: auto; display: block; }
+.tracebox .emptynote {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+}
+.written { fill: none; stroke: var(--ink); stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
+.model-stroke { fill: none; stroke: #7a5cc4; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
+
+/* 大問ごとの点 */
+.secbars { display: grid; gap: 8px; }
+.secbar {
+  display: grid;
+  grid-template-columns: 1fr 90px 56px;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+.secbar .track { height: 14px; background: var(--line); border-radius: 99px; overflow: hidden; }
+.secbar .fill { height: 100%; background: var(--ng); }
+.secbar .fill.good { background: var(--ok); }
+.secbar .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* 折れ線グラフ */
+.chart svg { width: 100%; display: block; }
+.chart-axis { stroke: var(--line); stroke-width: 1; }
+.chart-line-pass { stroke: var(--ok); stroke-width: 1.5; stroke-dasharray: 4 3; }
+.chart-path { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linejoin: round; }
+.chart-dot { fill: var(--accent); }
+.chart-label { font-size: 9px; fill: var(--ink-soft); }
+
+@media (max-width: 480px) {
+  .gradepair { grid-template-columns: 1fr; }
+  .secbar { grid-template-columns: 1fr 60px 52px; font-size: 13px; }
 }

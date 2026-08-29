@@ -23,6 +23,10 @@ interface Props {
   onOpenMap: () => void;
   onOpenZukan: () => void;
   onOpenDressup: () => void;
+  onOpenExam: () => void;
+  /** これまでの模試の最高点（まだなら null） */
+  examBest: number | null;
+  examCount: number;
   onOpenSettings: () => void;
   onOpenBackup: () => void;
   onDismissInstallHint: () => void;
@@ -147,6 +151,21 @@ export function Home(props: Props) {
         {props.tracedCount > 0 && (
           <p className="muted center" style={{ marginTop: 10, marginBottom: 0 }}>
             これまでに {props.tracedCount}字 なぞったよ
+          </p>
+        )}
+      </div>
+
+      <div className="card">
+        <h2>もぎしけん</h2>
+        <p className="muted">
+          本番と おなじ ならびで、60分の テストです。じつりょくを ためせます。
+        </p>
+        <button className="wide" onClick={props.onOpenExam}>
+          📋 もぎしけんを する
+        </button>
+        {props.examCount > 0 && (
+          <p className="muted center" style={{ marginTop: 10, marginBottom: 0 }}>
+            これまで {props.examCount}回　いちばん よかった点 {props.examBest}点
           </p>
         )}
       </div>

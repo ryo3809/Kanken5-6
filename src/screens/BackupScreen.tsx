@@ -68,7 +68,7 @@ export function BackupScreen({ onBack, onDataChanged, counts, selfGrades }: Prop
       const n = await restoreFromFile(file);
       setMessage(
         `読みこみました（漢字の記録 ${n.progress}件 / 学習の記録 ${n.sessions}件 / ` +
-          `なぞり書き ${n.traces}件 / 自己採点 ${n.selfGrades}件）。`,
+          `なぞり書き ${n.traces}件 / 自己採点 ${n.selfGrades}件 / 模試 ${n.exams}件）。`,
       );
       onDataChanged();
     } catch (e) {
