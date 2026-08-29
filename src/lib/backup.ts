@@ -4,9 +4,9 @@
 // この機能が無いと、消えたときに取り返しがつきません。だから最初から作ってあります。
 
 import type {
-  BackupFile, Progress, SelfGradeRecord, SessionRecord, Settings, TraceRecord,
+  BackupFile, GameState, Progress, SelfGradeRecord, SessionRecord, Settings, TraceRecord,
 } from './types';
-import { DEFAULT_SETTINGS } from './types';
+import { DEFAULT_GAME, DEFAULT_SETTINGS } from './types';
 import { exportAll, importAll } from './db';
 
 /** バックアップファイルを作って、ダウンロードさせる */
@@ -93,6 +93,13 @@ export function validateBackup(raw: unknown): BackupFile {
           (g.grade === 'ok' || g.grade === 'close' || g.grade === 'ng'),
       )
     : [];
+  // しばまるの状態。古いバックアップには入っていないので無くてもよい
+  const game: GameState = {
+    ...DEFAULT_GAME,
+    ...(typeof o.game === 'object' && o.game !== null ? o.game : {}),
+  };
+  if (!Number.isFinite(game.exp) || game.exp < 0) game.exp = 0;
+  if (!Array.isArray(game.seenSpots)) game.seenSpots = [0];
   const settings: Settings = { ...DEFAULT_SETTINGS, ...(o.settings ?? {}) };
 
   if (progress.length === 0 && sessions.length === 0) {
@@ -106,6 +113,7 @@ export function validateBackup(raw: unknown): BackupFile {
     sessions,
     traces,
     selfGrades,
+    game,
     settings,
   };
 }
@@ -132,6 +140,7 @@ export async function restoreFromFile(
     sessions: data.sessions,
     traces: data.traces,
     selfGrades: data.selfGrades,
+    game: data.game,
     settings: data.settings,
   });
   return {

@@ -114,6 +114,23 @@ export interface TraceRecord {
   lastTracedAt: number;
 }
 
+/**
+ * しばまるとゲーム要素の状態。
+ * 経験値は絶対に減りません（休んでも、まちがえても）。
+ */
+export interface GameState {
+  /** 累計の経験値。減ることはない */
+  exp: number;
+  /** かぶっている ぼうしの id（items.ts） */
+  hat: string | null;
+  /** つけている くびわの id */
+  collar: string | null;
+  /** 見たことのあるマップの地点（お知らせを二重に出さないため） */
+  seenSpots: number[];
+}
+
+export const DEFAULT_GAME: GameState = { exp: 0, hat: null, collar: null, seenSpots: [0] };
+
 /** 設定 */
 export interface Settings {
   /** いま練習している級 */
@@ -158,5 +175,6 @@ export interface BackupFile {
   sessions: SessionRecord[];
   traces?: TraceRecord[];
   selfGrades?: SelfGradeRecord[];
+  game?: GameState;
   settings: Settings;
 }

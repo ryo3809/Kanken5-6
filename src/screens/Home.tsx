@@ -1,59 +1,78 @@
-// ホーム画面。きょうやることが一目で分かるようにする。
+// ホーム画面。しばまるが出むかえて、きょうやることが一目で分かるようにする。
 
-import type { Box, Settings } from '../lib/types';
+import type { Box, GameState, Settings } from '../lib/types';
+import { Shibamaru } from '../character/Shibamaru';
+import { pickLine, type Expression } from '../character/expressions';
+import { levelProgress, mapProgress, stampInfo } from '../lib/gamification';
 
 interface Props {
   settings: Settings;
   summary: {
-    total: number;
-    due: number;
-    unseen: number;
-    learned: number;
-    boxes: Record<Box, number>;
+    total: number; due: number; unseen: number; learned: number; boxes: Record<Box, number>;
   };
-  streakDays: number;
+  sessionDates: string[];
   todayAnswered: number;
   storageOk: boolean;
   /** 校正まちで、まだ出題できない漢字の数 */
   blockedCount: number;
+  game: GameState;
+  tracedCount: number;
   onStart: () => void;
   onStartTracing: () => void;
   onStartWriting: () => void;
-  /** なぞり書きをしたことのある漢字の数 */
-  tracedCount: number;
+  onOpenMap: () => void;
+  onOpenZukan: () => void;
+  onOpenDressup: () => void;
   onOpenSettings: () => void;
   onOpenBackup: () => void;
   onDismissInstallHint: () => void;
 }
 
-const BOX_LABEL: Record<Box, string> = {
-  1: 'はこ1',
-  2: 'はこ2',
-  3: 'はこ3',
-  4: 'はこ4',
-  5: 'はこ5',
-};
+const BOX_LABEL: Record<Box, string> = { 1: 'はこ1', 2: 'はこ2', 3: 'はこ3', 4: 'はこ4', 5: 'はこ5' };
 
 /** ホーム画面に追加していないと、iOS はデータを7日で消すことがある */
 function needsInstallHint(): boolean {
   const standalone =
     (window.navigator as unknown as { standalone?: boolean }).standalone === true ||
     window.matchMedia('(display-mode: standalone)').matches;
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+  const isIOS =
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   return isIOS && !standalone;
 }
 
 export function Home(props: Props) {
-  const { settings, summary, streakDays, todayAnswered, storageOk, blockedCount } = props;
-  const nothingToDo = summary.due === 0 && summary.unseen === 0;
+  const { settings, summary, todayAnswered, storageOk, blockedCount, game } = props;
+  const stamps = stampInfo(props.sessionDates);
+  const lv = levelProgress(game.exp);
+  const map = mapProgress(game.exp);
+
+  // ひさしぶりなら ねむそうに、きょうやったなら うれしそうに
+  const exp: Expression =
+    todayAnswered > 0 ? 'happy' : stamps.currentStreak === 0 && stamps.totalDays > 0 ? 'sleepy' : 'normal';
 
   return (
     <div className="app">
       <h1>かんじ れんしゅう</h1>
-      <p className="muted" style={{ marginBottom: 16 }}>
-        いま {settings.kyu}級 の れんしゅう中
+      <p className="muted" style={{ marginBottom: 14 }}>
+        いま {settings.kyu}級 の れんしゅう中　・　レベル {lv.level}
       </p>
+
+      <div className="card">
+        <div className="shibabar">
+          <Shibamaru expression={exp} hat={game.hat} collar={game.collar} size={104} />
+          <div className="bubble">{pickLine(exp, (todayAnswered % 7) / 7)}</div>
+        </div>
+        <div className="levelbar" style={{ marginTop: 14 }}>
+          <span>レベル {lv.level}</span>
+          <div className="progressbar" style={{ margin: 0 }}>
+            <div style={{ width: `${lv.ratio * 100}%` }} />
+          </div>
+          <span className="muted">
+            {lv.current}/{lv.need}
+          </span>
+        </div>
+      </div>
 
       {!storageOk && (
         <div className="notice bad">
@@ -94,25 +113,14 @@ export function Home(props: Props) {
             <span>まだ ならってない</span>
           </div>
           <div className="stat">
-            <b>{streakDays}</b>
-            <span>れんぞく にっすう</span>
+            <b>{stamps.totalDays}</b>
+            <span>がんばった日</span>
           </div>
         </div>
 
-        {nothingToDo ? (
-          <>
-            <p className="center">
-              きょうの ぶんは ぜんぶ おわりました。よくがんばったね！
-            </p>
-            <button className="primary" onClick={props.onStart}>
-              それでも もうすこし やる
-            </button>
-          </>
-        ) : (
-          <button className="primary" onClick={props.onStart}>
-            きょうの がくしゅう（{settings.sessionSize}もん）
-          </button>
-        )}
+        <button className="primary" onClick={props.onStart}>
+          きょうの がくしゅう（{settings.sessionSize}もん）
+        </button>
 
         {todayAnswered > 0 && (
           <p className="muted center" style={{ marginTop: 12, marginBottom: 0 }}>
@@ -141,6 +149,20 @@ export function Home(props: Props) {
             これまでに {props.tracedCount}字 なぞったよ
           </p>
         )}
+      </div>
+
+      <div className="card">
+        <h2>しばまると あそぶ</h2>
+        <p className="muted" style={{ marginBottom: 10 }}>
+          いま <b>{map.spot.name}</b> まで きたよ
+        </p>
+        <div className="row">
+          <button onClick={props.onOpenMap}>🗺 おさんぽマップ</button>
+          <button onClick={props.onOpenZukan}>📖 かんじずかん</button>
+        </div>
+        <button className="wide" style={{ marginTop: 10 }} onClick={props.onOpenDressup}>
+          🎀 きせかえ
+        </button>
       </div>
 
       <div className="card">

@@ -1,16 +1,22 @@
 // セッションが終わったあとの結果画面。
 // 責めたり、悲しませたりする表現は使いません。
 
-import type { Question } from '../lib/types';
+import type { GameState, Question } from '../lib/types';
+import { Shibamaru } from '../character/Shibamaru';
+import { ITEM_BY_ID } from '../character/items';
 
 interface Props {
   results: { q: Question; correct: boolean }[];
   saveError: string | null;
+  /** もらったもののお知らせ */
+  reward: { levelUp: number | null; spot: string | null; items: string[] } | null;
+  game: GameState;
   onHome: () => void;
   onAgain: () => void;
+  onOpenMap: () => void;
 }
 
-export function Result({ results, saveError, onHome, onAgain }: Props) {
+export function Result({ results, saveError, reward, game, onHome, onAgain, onOpenMap }: Props) {
   const total = results.length;
   const correct = results.filter((r) => r.correct).length;
   const missed = results.filter((r) => !r.correct);
@@ -29,6 +35,12 @@ export function Result({ results, saveError, onHome, onAgain }: Props) {
   return (
     <div className="app">
       <div className="card center">
+        <Shibamaru
+          expression={total > 0 && correct >= total * 0.6 ? 'happy' : 'cheer'}
+          hat={game.hat}
+          collar={game.collar}
+          size={110}
+        />
         <h1>おつかれさま！</h1>
         <p style={{ fontSize: 40, margin: '8px 0 0' }}>
           <b>{correct}</b>
@@ -42,6 +54,27 @@ export function Result({ results, saveError, onHome, onAgain }: Props) {
           <b>きろくを ほぞんできませんでした</b>
           <br />
           {saveError}
+        </div>
+      )}
+
+      {reward && (reward.levelUp || reward.spot || reward.items.length > 0) && (
+        <div className="card center">
+          <Shibamaru expression="proud" size={90} />
+          {reward.levelUp && (
+            <p style={{ fontSize: 22, fontWeight: 700 }}>レベル {reward.levelUp} に なった！</p>
+          )}
+          {reward.spot && <p style={{ fontSize: 19 }}>「{reward.spot}」に ついたよ！</p>}
+          {reward.items.map((id) => {
+            const item = ITEM_BY_ID.get(id);
+            return item ? (
+              <p key={id} style={{ fontSize: 18 }}>
+                🎁 <b>{item.name}</b> を もらった！
+              </p>
+            ) : null;
+          })}
+          <button className="ghost wide" onClick={onOpenMap}>
+            おさんぽマップを 見る
+          </button>
         </div>
       )}
 

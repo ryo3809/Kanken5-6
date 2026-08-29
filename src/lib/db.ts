@@ -9,11 +9,14 @@
 //   ・保存できなくても、アプリ自体は動き続ける（その回の記録が残らないだけ）
 
 import { openDB, type IDBPDatabase } from 'idb';
-import type { Progress, SelfGradeRecord, SessionRecord, Settings, TraceRecord } from './types';
+import type {
+  GameState, Progress, SelfGradeRecord, SessionRecord, Settings, TraceRecord,
+} from './types';
+import { DEFAULT_GAME } from './types';
 import { DEFAULT_SETTINGS } from './types';
 
 const DB_NAME = 'kanken-5-6';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 export const STORE = {
   progress: 'progress',
@@ -21,6 +24,7 @@ export const STORE = {
   settings: 'settings',
   traces: 'traces',
   selfGrades: 'selfGrades',
+  game: 'game',
 } as const;
 
 /** 保存まわりで起きた問題を、子どもにも分かる日本語で表す */
@@ -76,6 +80,10 @@ function getDb(): Promise<IDBPDatabase> {
         }
         // 書き取りの自己採点の記録（版3で追加）。
         // 保護者があとから確認するために残します。
+        // しばまるとゲーム要素（版4で追加）
+        if (!db.objectStoreNames.contains(STORE.game)) {
+          db.createObjectStore(STORE.game);
+        }
         if (!db.objectStoreNames.contains(STORE.selfGrades)) {
           const g = db.createObjectStore(STORE.selfGrades, { keyPath: 'id', autoIncrement: true });
           g.createIndex('date', 'date');
@@ -208,6 +216,29 @@ export async function loadSelfGrades(): Promise<SelfGradeRecord[]> {
   }
 }
 
+// ─── しばまる・ゲーム要素 ──────────────────────────────────
+
+export async function loadGame(): Promise<GameState> {
+  try {
+    const db = await getDb();
+    const g = await db.get(STORE.game, 'game');
+    // 保存されていない項目は初期値で埋める（アプリを更新して項目が増えても壊れない）
+    return { ...DEFAULT_GAME, ...(g ?? {}) };
+  } catch {
+    // 読めなくても練習はできるので、初期値で進む
+    return { ...DEFAULT_GAME };
+  }
+}
+
+export async function saveGame(g: GameState): Promise<void> {
+  try {
+    const db = await getDb();
+    await db.put(STORE.game, g, 'game');
+  } catch (e) {
+    throw new StorageError(toKidMessage(e), e);
+  }
+}
+
 // ─── 設定 ──────────────────────────────────────────────────
 
 export async function loadSettings(): Promise<Settings> {
@@ -238,17 +269,19 @@ export async function exportAll(): Promise<{
   sessions: SessionRecord[];
   traces: TraceRecord[];
   selfGrades: SelfGradeRecord[];
+  game: GameState;
   settings: Settings;
 }> {
   const db = await getDb();
-  const [progress, sessions, traces, selfGrades, settings] = await Promise.all([
+  const [progress, sessions, traces, selfGrades, game, settings] = await Promise.all([
     db.getAll(STORE.progress) as Promise<Progress[]>,
     db.getAll(STORE.sessions) as Promise<SessionRecord[]>,
     db.getAll(STORE.traces) as Promise<TraceRecord[]>,
     db.getAll(STORE.selfGrades) as Promise<SelfGradeRecord[]>,
+    loadGame(),
     loadSettings(),
   ]);
-  return { progress, sessions, traces, selfGrades, settings };
+  return { progress, sessions, traces, selfGrades, game, settings };
 }
 
 /**
@@ -262,18 +295,20 @@ export async function importAll(data: {
   sessions: SessionRecord[];
   traces?: TraceRecord[];
   selfGrades?: SelfGradeRecord[];
+  game?: GameState;
   settings: Settings;
 }): Promise<void> {
   try {
     const db = await getDb();
     const tx = db.transaction(
-      [STORE.progress, STORE.sessions, STORE.traces, STORE.selfGrades, STORE.settings],
+      [STORE.progress, STORE.sessions, STORE.traces, STORE.selfGrades, STORE.game, STORE.settings],
       'readwrite',
     );
     const pStore = tx.objectStore(STORE.progress);
     const sStore = tx.objectStore(STORE.sessions);
     const tStore = tx.objectStore(STORE.traces);
     const gStore = tx.objectStore(STORE.selfGrades);
+    const mStore = tx.objectStore(STORE.game);
     const cStore = tx.objectStore(STORE.settings);
 
     // ここで1つずつ await してはいけない。
@@ -298,6 +333,7 @@ export async function importAll(data: {
         void _drop;
         return sStore.put(rest as SessionRecord);
       }),
+      mStore.put({ ...DEFAULT_GAME, ...(data.game ?? {}) }, 'game'),
       cStore.put(data.settings, 'settings'),
     ];
     await Promise.all(ops);
@@ -315,7 +351,7 @@ export async function eraseAll(): Promise<void> {
   try {
     const db = await getDb();
     const tx = db.transaction(
-      [STORE.progress, STORE.sessions, STORE.traces, STORE.selfGrades, STORE.settings],
+      [STORE.progress, STORE.sessions, STORE.traces, STORE.selfGrades, STORE.game, STORE.settings],
       'readwrite',
     );
     await Promise.all([
@@ -323,6 +359,7 @@ export async function eraseAll(): Promise<void> {
       tx.objectStore(STORE.sessions).clear(),
       tx.objectStore(STORE.traces).clear(),
       tx.objectStore(STORE.selfGrades).clear(),
+      tx.objectStore(STORE.game).clear(),
       tx.objectStore(STORE.settings).clear(),
     ]);
     await tx.done;

@@ -110,7 +110,11 @@ try {
   await page.waitForSelector('h1');
   const homeText = await page.locator('body').textContent();
   check('「きょうは 10もん といたよ」と出る', homeText.includes('10もん といたよ'), '');
-  check('連続日数が1になっている', /1[\s\S]{0,40}れんぞく にっすう/.test(homeText));
+  // 「連続日数」ではなく「がんばった日」を出しています。
+  // 1日休んだだけでゼロになる表示は、続ける気持ちを折るためです。
+  check('「がんばった日」が1になっている', /1[\s\S]{0,40}がんばった日/.test(homeText));
+  check('責める表示（連続がとぎれた等）が出ていない',
+    !/とぎれ|リセット|れんぞく きろく なし/.test(homeText));
   const learned = homeText.match(/(\d+)字 を れんしゅう中/);
   check('練習中の字数が10になっている', learned && learned[1] === '10', learned ? learned[1] + '字' : '不明');
   await page.screenshot({ path: `${SHOTS}/5-ホーム-学習後.png` });

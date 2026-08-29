@@ -347,3 +347,144 @@ label.field .control button[aria-pressed='true'] {
   font-size: 15px;
 }
 .gradelog .big { font-size: 24px; text-align: center; }
+
+/* ───── しばまる ───── */
+
+.shiba { display: block; }
+@media (prefers-reduced-motion: no-preference) {
+  .shiba.wag .tail { transform-origin: 72px 86px; animation: wag 0.5s ease-in-out infinite; }
+  @keyframes wag {
+    0%, 100% { transform: rotate(-9deg); }
+    50%      { transform: rotate(9deg); }
+  }
+  .shiba.wag { animation: hop 0.9s ease-in-out infinite; }
+  @keyframes hop {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-3px); }
+  }
+}
+
+/* しばまるとふきだし */
+.shibabar { display: flex; align-items: center; gap: 12px; }
+.bubble {
+  position: relative;
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 14px;
+  font-size: 16px;
+}
+.bubble::before {
+  content: '';
+  position: absolute;
+  left: -7px;
+  top: 50%;
+  margin-top: -6px;
+  width: 12px; height: 12px;
+  background: var(--bg);
+  border-left: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  transform: rotate(45deg);
+}
+
+/* レベルのバー */
+.levelbar { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; font-size: 14px; }
+
+/* ───── おさんぽマップ ───── */
+
+.scene { position: relative; width: 100%; overflow: hidden; background: var(--bg); }
+.scene svg { display: block; width: 100%; height: 100%; }
+.scene-shiba { position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%); }
+
+.maplist { display: grid; gap: 0; }
+.mapitem {
+  display: grid;
+  grid-template-columns: 26px 1fr;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  align-items: start;
+}
+.mapitem:last-child { border-bottom: none; }
+.mapitem .dot {
+  width: 14px; height: 14px; border-radius: 99px;
+  background: var(--line); margin: 4px 0 0 6px;
+}
+.mapitem.reached .dot { background: var(--accent); }
+.mapitem.now .dot { box-shadow: 0 0 0 4px rgba(232, 136, 58, 0.25); }
+.mapitem:not(.reached) b { color: var(--ink-soft); }
+
+/* スタンプ */
+.stampgrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.stamp {
+  aspect-ratio: 1;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 10px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+.stamp.done { background: #fdf0e2; border-color: var(--accent); font-size: 18px; }
+
+/* ───── きせかえ ───── */
+
+.itemgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.itemgrid button.picked { background: var(--accent); border-color: var(--accent-dark); color: #fff; font-weight: 700; }
+
+/* ───── かんじずかん ───── */
+
+.zukangrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); gap: 6px; }
+.zukancell {
+  aspect-ratio: 1;
+  min-height: 48px;
+  padding: 0;
+  font-size: 24px;
+  color: #cfc7b8;
+  background: var(--bg);
+  border-color: var(--line);
+}
+.zukancell.got { color: var(--ink); background: #fff; }
+.zukancell.mastered { background: #fdf0e2; border-color: var(--accent); font-weight: 700; }
+
+/* 詳しい説明のシート */
+.sheet {
+  position: fixed;
+  inset: 0;
+  background: rgba(51, 48, 43, 0.45);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 50;
+  padding: 12px;
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+.sheet-inner {
+  background: var(--card);
+  border-radius: 20px;
+  padding: 20px;
+  width: 100%;
+  max-width: 520px;
+  max-height: 92vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.strokeanim { width: min(230px, 60vw); margin: 0 auto; }
+.strokeanim svg { width: 100%; display: block; }
+
+/* 筆順のアニメ：線を1本ずつ引いていく */
+.anim-stroke {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 340;
+  stroke-dashoffset: 340;
+  animation: draw 0.42s linear forwards;
+}
+@keyframes draw { to { stroke-dashoffset: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .anim-stroke { stroke-dashoffset: 0; animation: none; }
+}

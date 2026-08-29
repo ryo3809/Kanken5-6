@@ -4,12 +4,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import kanjiData from './data/kanji.json';
 import wordsData from './data/words.json';
 import type {
-  KanjiEntry, Progress, Question, SelfGradeRecord, Settings, TraceRecord, WordEntry,
+  GameState, KanjiEntry, Progress, Question, SelfGradeRecord, Settings, TraceRecord, WordEntry,
 } from './lib/types';
-import { DEFAULT_SETTINGS } from './lib/types';
+import { DEFAULT_GAME, DEFAULT_SETTINGS } from './lib/types';
 import {
-  addSelfGrades, addSession, isStorageAvailable, loadAllProgress, loadSelfGrades, loadSessions,
-  loadSettings, loadTraces, saveProgressBatch, saveSettings, saveTraces, StorageError,
+  addSelfGrades, addSession, isStorageAvailable, loadAllProgress, loadGame, loadSelfGrades,
+  loadSessions, loadSettings, loadTraces, saveGame, saveProgressBatch, saveSettings, saveTraces,
+  StorageError,
 } from './lib/db';
 import { applyAnswer, newProgress, pickForSession, summarize, toDateKey } from './lib/leitner';
 import {
@@ -24,7 +25,42 @@ import { BackupScreen } from './screens/BackupScreen';
 import { Tracing } from './screens/Tracing';
 import { Writing, type WritingResult } from './screens/Writing';
 import { preloadGrade } from './lib/strokeStore';
+import { EXP, levelFromExp, mapProgress, MAP_SPOTS, unlockedItems } from './lib/gamification';
+import { MapScreen } from './screens/MapScreen';
+import { DressupScreen } from './screens/DressupScreen';
+import { ZukanScreen } from './screens/ZukanScreen';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { Shibamaru } from './character/Shibamaru';
+import { ITEM_BY_ID } from './character/items';
+
+/** セッションのあと、もらったものを知らせる部品 */
+function RewardNews({
+  news, onOpenMap,
+}: {
+  news: { levelUp: number | null; spot: string | null; items: string[] } | null;
+  onOpenMap: () => void;
+}) {
+  if (!news) return null;
+  if (!news.levelUp && !news.spot && news.items.length === 0) return null;
+  return (
+    <div className="card center">
+      <Shibamaru expression="proud" size={90} />
+      {news.levelUp && <p style={{ fontSize: 22, fontWeight: 700 }}>レベル {news.levelUp} に なった！</p>}
+      {news.spot && <p style={{ fontSize: 19 }}>「{news.spot}」に ついたよ！</p>}
+      {news.items.map((id) => {
+        const item = ITEM_BY_ID.get(id);
+        return item ? (
+          <p key={id} style={{ fontSize: 18 }}>
+            🎁 <b>{item.name}</b> を もらった！
+          </p>
+        ) : null;
+      })}
+      <button className="ghost wide" onClick={onOpenMap}>
+        おさんぽマップを 見る
+      </button>
+    </div>
+  );
+}
 
 const ALL_KANJI = (kanjiData as { kanji: KanjiEntry[] }).kanji;
 const ALL_WORDS = (wordsData as { words: WordEntry[] }).words;
@@ -33,26 +69,11 @@ type Screen =
   | 'loading' | 'home' | 'session' | 'result'
   | 'tracing' | 'tracingResult'
   | 'writing' | 'writingResult'
+  | 'map' | 'zukan' | 'dressup'
   | 'settings' | 'backup';
 
 /** なぞり書き1回ぶんの字数 */
 const TRACE_SESSION_SIZE = 3;
-
-/** 連続学習日数。1日でも空いてもゼロには戻さない（続ける気持ちを折らないため） */
-function calcStreak(dates: string[]): number {
-  if (dates.length === 0) return 0;
-  const set = new Set(dates);
-  let streak = 0;
-  const d = new Date();
-  // きょうまだやっていなければ、きのうから数える
-  if (!set.has(toDateKey(d))) d.setDate(d.getDate() - 1);
-  for (;;) {
-    if (!set.has(toDateKey(d))) break;
-    streak++;
-    d.setDate(d.getDate() - 1);
-  }
-  return streak;
-}
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('loading');
@@ -72,6 +93,18 @@ export default function App() {
   const [writingQuestions, setWritingQuestions] = useState<WritingQuestion[]>([]);
   const [writingResults, setWritingResults] = useState<WritingResult[]>([]);
   const [selfGrades, setSelfGrades] = useState<SelfGradeRecord[]>([]);
+  const [game, setGame] = useState<GameState>(DEFAULT_GAME);
+  // 画面の再描画を待たずに、いつでも最新のしばまるの状態を読めるようにしておく。
+  // （フェーズ2で、古い値を読んで二重に計算する不具合が出たため、同じ作りにしています）
+  const gameRef = useRef<GameState>(DEFAULT_GAME);
+  const setGameBoth = useCallback((g: GameState) => {
+    gameRef.current = g;
+    setGame(g);
+  }, []);
+  /** セッションが終わったときに見せる「もらったもの」のお知らせ */
+  const [rewardNews, setRewardNews] = useState<
+    { levelUp: number | null; spot: string | null; items: string[] } | null
+  >(null);
   const [todayAnswered, setTodayAnswered] = useState(0);
   const [sessionCount, setSessionCount] = useState(0);
   const [storageOk, setStorageOk] = useState(true);
@@ -87,13 +120,14 @@ export default function App() {
     try {
       const ok = await isStorageAvailable();
       setStorageOk(ok);
-      const [s, p, sess, tr, sg] = await Promise.all([
-        loadSettings(), loadAllProgress(), loadSessions(), loadTraces(), loadSelfGrades(),
+      const [s, p, sess, tr, sg, gm] = await Promise.all([
+        loadSettings(), loadAllProgress(), loadSessions(), loadTraces(), loadSelfGrades(), loadGame(),
       ]);
       setSettings(s);
       setProgressBoth(p);
       setTraces(tr);
       setSelfGrades(sg);
+      setGameBoth(gm);
       setSessionDates(sess.map((x) => x.date));
       setSessionCount(sess.length);
       const today = toDateKey();
@@ -110,7 +144,7 @@ export default function App() {
     } finally {
       setScreen((cur) => (cur === 'loading' ? 'home' : cur));
     }
-  }, [setProgressBoth]);
+  }, [setProgressBoth, setGameBoth]);
 
   useEffect(() => {
     void reload();
@@ -125,7 +159,6 @@ export default function App() {
   const usableChars = useMemo(() => chars.filter(canUse), [chars, canUse]);
   const kanjiByChar = useMemo(() => new Map(ALL_KANJI.map((k) => [k.c, k])), []);
   const summary = useMemo(() => summarize(chars, progress), [chars, progress]);
-  const streak = useMemo(() => calcStreak(sessionDates), [sessionDates]);
 
   // ── セッションを始める ───────────────────────────
   function startSession() {
@@ -146,11 +179,60 @@ export default function App() {
       return;
     }
     answeredChars.current = new Set();
+    setRewardNews(null);
     setQuestions(qs);
     setResults([]);
     setStartedAt(Date.now());
     setSaveError(null);
     setScreen('session');
+  }
+
+  // ── しばまる（経験値・ごほうび）────────────────────
+  /**
+   * 経験値を足す。経験値は絶対に減りません。
+   * レベルアップ・新しい場所・ごほうびがあれば、そのお知らせを返します。
+   */
+  async function addExp(amount: number, opts: { firstOfDay: boolean }): Promise<void> {
+    const gain = amount + (opts.firstOfDay ? EXP.firstOfDay : 0);
+    const before = gameRef.current;
+    const after: GameState = { ...before, exp: before.exp + gain };
+
+    const lvBefore = levelFromExp(before.exp);
+    const lvAfter = levelFromExp(after.exp);
+    const spotBefore = mapProgress(before.exp).index;
+    const spotAfter = mapProgress(after.exp).index;
+    const itemsBefore = new Set(unlockedItems(before.exp));
+    const newItems = unlockedItems(after.exp).filter((i) => !itemsBefore.has(i));
+
+    if (spotAfter > spotBefore) {
+      after.seenSpots = [...new Set([...after.seenSpots, spotAfter])];
+    }
+    setGameBoth(after);
+    setRewardNews({
+      levelUp: lvAfter > lvBefore ? lvAfter : null,
+      spot: spotAfter > spotBefore ? MAP_SPOTS[spotAfter].name : null,
+      items: newItems,
+    });
+    try {
+      await saveGame(after);
+    } catch {
+      // しばまるの状態が保存できなくても、学習の記録は別に保存されているので続けられる
+    }
+  }
+
+  /** きょう、まだ1回も学習していないか */
+  const isFirstOfDay = () => !sessionDates.includes(toDateKey());
+
+  async function changeGame(g: GameState) {
+    setGameBoth(g);
+    try {
+      await saveGame(g);
+      setSaveError(null);
+    } catch (e) {
+      setSaveError(
+        e instanceof StorageError ? e.kidMessage : 'しばまるの じょうたいを ほぞんできませんでした。',
+      );
+    }
   }
 
   // ── なぞり書き ───────────────────────────────────
@@ -175,6 +257,7 @@ export default function App() {
       return;
     }
     preloadGrade(queue[0].grade);
+    setRewardNews(null);
     setTraceQueue(queue);
     setTraceResult(null);
     setSaveError(null);
@@ -213,9 +296,11 @@ export default function App() {
         wrongChars: [],
       });
       setTraces(updated);
+      const first = isFirstOfDay();
       setSessionDates((d) => [...d, toDateKey()]);
       setSessionCount((n) => n + 1);
       setSaveError(null);
+      await addExp(result.traced.length * EXP.tracingChar, { firstOfDay: first });
     } catch (e) {
       setSaveError(
         e instanceof StorageError ? e.kidMessage : 'きろくの ほぞんに しっぱいしました。',
@@ -241,6 +326,7 @@ export default function App() {
       setLoadError('いまは だせる もんだいが ありません。せっていで きゅうを かえてみてね。');
       return;
     }
+    setRewardNews(null);
     setWritingQuestions(qs);
     setWritingResults([]);
     setStartedAt(Date.now());
@@ -284,10 +370,16 @@ export default function App() {
         wrongChars: res.filter((r) => r.grade !== 'ok').map((r) => r.q.answer),
       });
       setSelfGrades((prev) => [...grades, ...prev]);
+      const first = isFirstOfDay();
       setSessionDates((d) => [...d, today]);
       setSessionCount((n) => n + 1);
       setTodayAnswered((n) => n + res.length);
       setSaveError(null);
+      const gained = res.reduce(
+        (n, r) => n + (r.grade === 'ok' ? EXP.writingOk : EXP.writingOther),
+        0,
+      );
+      await addExp(gained, { firstOfDay: first });
     } catch (e) {
       setSaveError(
         e instanceof StorageError ? e.kidMessage : 'きろくの ほぞんに しっぱいしました。',
@@ -334,10 +426,16 @@ export default function App() {
         correct: res.filter((r) => r.correct).length,
         wrongChars: res.filter((r) => !r.correct).map((r) => r.q.targetChar),
       });
+      const first = isFirstOfDay();
       setSessionDates((d) => [...d, toDateKey()]);
       setSessionCount((n) => n + 1);
       setTodayAnswered((n) => n + res.length);
       setSaveError(null);
+      const gained = res.reduce(
+        (n, r) => n + (r.correct ? EXP.readingCorrect : EXP.readingWrong),
+        0,
+      );
+      await addExp(gained, { firstOfDay: first });
     } catch (e) {
       setSaveError(
         e instanceof StorageError
@@ -382,13 +480,17 @@ export default function App() {
         <Home
           settings={settings}
           summary={summary}
-          streakDays={streak}
+          sessionDates={sessionDates}
           todayAnswered={todayAnswered}
           storageOk={storageOk}
           blockedCount={chars.length - usableChars.length}
           onStart={startSession}
           onStartTracing={startTracing}
           onStartWriting={startWriting}
+          game={game}
+          onOpenMap={() => setScreen('map')}
+          onOpenZukan={() => setScreen('zukan')}
+          onOpenDressup={() => setScreen('dressup')}
           tracedCount={traces.size}
           onOpenSettings={() => setScreen('settings')}
           onOpenBackup={() => setScreen('backup')}
@@ -410,8 +512,11 @@ export default function App() {
         <Result
           results={results}
           saveError={saveError}
+          reward={rewardNews}
+          game={game}
           onHome={() => setScreen('home')}
           onAgain={startSession}
+          onOpenMap={() => setScreen('map')}
         />
       )}
 
@@ -426,6 +531,7 @@ export default function App() {
       {screen === 'tracingResult' && traceResult && (
         <div className="app">
           <div className="card center">
+            <Shibamaru expression="happy" hat={game.hat} collar={game.collar} size={110} />
             <h1>なぞりがき おつかれさま！</h1>
             <p style={{ fontSize: 30, margin: '8px 0 0' }}>
               {traceResult.traced.join('　')}
@@ -436,6 +542,7 @@ export default function App() {
             )}
           </div>
           {saveError && <div className="notice bad">{saveError}</div>}
+          <RewardNews news={rewardNews} onOpenMap={() => setScreen('map')} />
           <button className="primary" onClick={() => setScreen('home')}>
             ホームに もどる
           </button>
@@ -457,6 +564,16 @@ export default function App() {
       {screen === 'writingResult' && (
         <div className="app">
           <div className="card center">
+            <Shibamaru
+              expression={
+                writingResults.filter((r) => r.grade === 'ok').length >= writingResults.length * 0.6
+                  ? 'happy'
+                  : 'cheer'
+              }
+              hat={game.hat}
+              collar={game.collar}
+              size={110}
+            />
             <h1>おつかれさま！</h1>
             <p style={{ fontSize: 40, margin: '8px 0 0' }}>
               <b>{writingResults.filter((r) => r.grade === 'ok').length}</b>
@@ -467,6 +584,7 @@ export default function App() {
             <p className="muted">「できた」を えらんだ かず</p>
           </div>
           {saveError && <div className="notice bad">{saveError}</div>}
+          <RewardNews news={rewardNews} onOpenMap={() => setScreen('map')} />
           {writingResults.some((r) => r.grade !== 'ok') && (
             <div className="card">
               <h2>また あした でてくるよ</h2>
@@ -486,6 +604,29 @@ export default function App() {
             もう1かい やる
           </button>
         </div>
+      )}
+
+      {screen === 'map' && (
+        <MapScreen game={game} sessionDates={sessionDates} onBack={() => setScreen('home')} />
+      )}
+
+      {screen === 'zukan' && (
+        <ZukanScreen
+          kyu={settings.kyu}
+          kanji={ALL_KANJI}
+          words={ALL_WORDS}
+          progress={progress}
+          traced={new Set(traces.keys())}
+          onBack={() => setScreen('home')}
+        />
+      )}
+
+      {screen === 'dressup' && (
+        <DressupScreen
+          game={game}
+          onChange={(g) => void changeGame(g)}
+          onBack={() => setScreen('home')}
+        />
       )}
 
       {screen === 'settings' && (
