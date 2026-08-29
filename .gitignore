@@ -1,0 +1,22 @@
+# 取得した元データのキャッシュ（大きいので保存しない。data:fetch で再取得できる）
+data/cache/
+
+# Node.js のライブラリ置き場
+node_modules/
+
+# ビルド結果
+dist/
+.vite/
+
+# OS が勝手に作るファイル
+.DS_Store
+Thumbs.db
+
+# エディタの設定
+.vscode/
+.idea/
+
+# 秘密情報（このアプリでは使わない予定だが、念のため）
+.env
+.env.*
+!.env.example
