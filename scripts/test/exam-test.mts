@@ -3,7 +3,9 @@
  *   npm run test:exam
  */
 import { readFileSync } from 'node:fs';
-import { buildExam, classifyOnKun, isAutoScored, makeRng } from '../../src/lib/exam.ts';
+import {
+  buildExam, buildPractice, classifyOnKun, isAutoScored, makeRng, practiceList,
+} from '../../src/lib/exam.ts';
 import type { KanjiEntry, KozoEntry, PairEntry, WordEntry } from '../../src/lib/types.ts';
 
 let pass = 0, fail = 0;
@@ -153,6 +155,74 @@ console.log('\n▶ テスト9　乱数');
   check('0以上1未満の値が出る', vals.every((v) => v >= 0 && v < 1));
   const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
   check('かたよりが大きくない', Math.abs(avg - 0.5) < 0.05, `平均 ${avg.toFixed(3)}`);
+}
+
+
+console.log('\n▶ テスト　分野べつれんしゅう（フェーズ8）');
+{
+  const allWords = new Set(data.words.map((w) => w.w));
+
+  // 選べる分野
+  const l6 = practiceList(6);
+  const l5 = practiceList(5);
+  check('6級は11の大問から えらべる', l6.length === 11, `${l6.length}`);
+  check('5級は11の大問＋誤字訂正', l5.length === 12, `${l5.length}`);
+  check('誤字訂正は5級だけ',
+    !l6.some((x) => x.id === 'gojitei') && l5.some((x) => x.id === 'gojitei'));
+  check('誤字訂正には「本番とちがう」説明がついている',
+    (l5.find((x) => x.id === 'gojitei')?.note ?? '').includes('ことばだけ'));
+  check('誤字訂正は模擬試験には出ない',
+    !buildExam(5, data, 999).sections.some((s) => s.id === 'gojitei'));
+
+  // 各分野が10問ずつ作れるか（承認まちの2分野をのぞく）
+  const waiting = ['pair', 'kozo'];
+  for (const kyu of [6, 5] as const) {
+    for (const sp of practiceList(kyu)) {
+      const p = buildPractice(kyu, data, sp.id, 10, 20260829);
+      if (waiting.includes(sp.id)) {
+        check(`${kyu}級 ${sp.title} は承認まちで出ない`, p === null);
+      } else {
+        check(`${kyu}級 ${sp.title} が10問できる`, p !== null && p.questions.length === 10,
+          `${p?.questions.length ?? 0}問`);
+      }
+    }
+  }
+
+  // 誤字訂正の中身
+  const g = buildPractice(5, data, 'gojitei', 20, 4242)!;
+  check('誤字訂正は手書きで答える', g.questions.every((q) => q.kind === 'write'));
+  check('答えは漢字1字', g.questions.every((q) => [...q.answer].length === 1));
+  check('出す言葉と正解の字がちがう', g.questions.every((q) => !q.prompt.includes(q.answer)));
+  check('入れかえた結果が、本物の言葉になっていない',
+    g.questions.every((q) => !allWords.has(q.prompt)));
+  check('直したものが、本物の言葉になる', g.questions.every((q) => {
+    const cs = [...q.prompt];
+    return cs.some((_, i) => allWords.has(cs.map((x, j) => (j === i ? q.answer : x)).join('')));
+  }));
+  check('読みのヒントがついている', g.questions.every((q) => (q.hint ?? '').includes('読みたいのに')));
+  check('数の言葉は出さない',
+    g.questions.every((q) => !/[一二三四五六七八九十百千万億兆]/.test(q.prompt)));
+  check('お手本を出すための学年が入っている',
+    g.questions.every((q) => typeof q.writeGrade === 'number' && q.writeGrade >= 1));
+
+  // たねが同じなら同じ問題、ちがえばちがう問題
+  const a = buildPractice(6, data, 'reading', 10, 7)!;
+  const b = buildPractice(6, data, 'reading', 10, 7)!;
+  const c2 = buildPractice(6, data, 'reading', 10, 8)!;
+  check('同じたねなら同じ問題',
+    a.questions.map((q) => q.prompt).join() === b.questions.map((q) => q.prompt).join());
+  check('たねがちがえば ちがう問題',
+    a.questions.map((q) => q.prompt).join() !== c2.questions.map((q) => q.prompt).join());
+
+  // 級の範囲がまもられているか
+  const g5 = new Set(data.kanji.filter((k) => k.grade <= 5).map((k) => k.c));
+  const p6 = buildPractice(6, data, 'writing', 10, 31)!;
+  check('6級のれんしゅうに6年生の漢字が出ない',
+    p6.questions.every((q) => [...q.prompt].every((ch) => !/\p{Script=Han}/u.test(ch) || g5.has(ch))));
+
+  // 知らない分野を頼まれても落ちない
+  check('知らない分野は null を返す',
+    buildPractice(6, data, 'gojitei', 10, 1) === null);
 }
 
 console.log(`\n${'='.repeat(52)}`);

@@ -14,7 +14,11 @@ import { readingMatches, toKatakana } from './reading-util.ts';
 /** 大問の種類 */
 export type SectionId =
   | 'reading' | 'okurigana' | 'radical' | 'strokes' | 'kozo'
-  | 'sanji' | 'yoji' | 'pair' | 'makeword' | 'onkun' | 'douon' | 'writing';
+  | 'sanji' | 'yoji' | 'pair' | 'makeword' | 'onkun' | 'douon' | 'writing'
+  // 誤字訂正は 5級の「主な出題内容」にあるが、2024年度第3回の問題には無かった。
+  // そのため模擬試験には入れず、「分野べつれんしゅう」でだけ出す。
+  //（docs/kanken-spec.md の「未確定・要注意の事項」を参照）
+  | 'gojitei';
 
 /** 答え方 */
 export type AnswerKind = 'choice' | 'text' | 'write';
@@ -167,12 +171,12 @@ export function classifyOnKun(word: WordEntry, byChar: Map<string, KanjiEntry>):
   return 3;                                               // エ 訓と音
 }
 
-/** 模擬試験を1回ぶん作る */
-export function buildExam(kyu: Kyu, data: ExamData, seed = Date.now()): Exam {
-  const rand = makeRng(seed);
-  const spec = kyu === 6 ? SPEC_6 : SPEC_5;
+/**
+ * 問題を作るための材料をそろえる。
+ * 模擬試験（buildExam）でも、分野べつれんしゅう（buildPractice）でも同じものを使う。
+ */
+function makeCtx(kyu: Kyu, data: ExamData, rand: () => number): Omit<Ctx, 'nextId'> {
   const maxGrade = kyu === 6 ? 5 : 6;
-
   const kanji = data.kanji.filter((k) => k.grade <= maxGrade);
   const byChar = new Map(kanji.map((k) => [k.c, k]));
   const words = data.words.filter(
@@ -184,6 +188,17 @@ export function buildExam(kyu: Kyu, data: ExamData, seed = Date.now()): Exam {
     (w) => (w.n ?? [...w.w].length) === 3 && !/[都道府県市区町村]$/.test(w.w),
   );
   const w4 = words.filter((w) => w.yoji);
+  // 「まちがい探し」で、うっかり本物の言葉を作ってしまわないための一覧。
+  // 確認まちのものも入れる（出題には使わないが、言葉として存在はするため）
+  const allWords = new Set(data.words.map((w) => w.w));
+  return { kyu, kanji, byChar, words, w2, w3, w4, allWords, data, rand };
+}
+
+/** 模擬試験を1回ぶん作る */
+export function buildExam(kyu: Kyu, data: ExamData, seed = Date.now()): Exam {
+  const rand = makeRng(seed);
+  const spec = kyu === 6 ? SPEC_6 : SPEC_5;
+  const ctx = makeCtx(kyu, data, rand);
 
   const sections: ExamSection[] = [];
   const skipped: Exam['skipped'] = [];
@@ -191,7 +206,7 @@ export function buildExam(kyu: Kyu, data: ExamData, seed = Date.now()): Exam {
   const nextId = () => `q${++idc}`;
 
   for (const sp of spec) {
-    const qs = buildSection(sp, { kyu, kanji, byChar, words, w2, w3, w4, data, rand, nextId });
+    const qs = buildSection(sp, { ...ctx, nextId });
     const full = sp.count * sp.pointsEach;
     if (qs.length < sp.count) {
       skipped.push({
@@ -216,6 +231,75 @@ export function buildExam(kyu: Kyu, data: ExamData, seed = Date.now()): Exam {
   };
 }
 
+/** 分野べつれんしゅうで えらべる大問 */
+export interface PracticeSpec {
+  id: SectionId;
+  /** 本番での大問番号。れんしゅうだけの分野は空 */
+  no: string;
+  title: string;
+  instruction: string;
+  /** 本番とちがうところがあれば、その説明 */
+  note?: string;
+}
+
+/** 誤字訂正（模擬試験には入れず、れんしゅうでだけ出す） */
+const GOJITEI: PracticeSpec = {
+  id: 'gojitei',
+  no: '',
+  title: '誤字訂正',
+  instruction: 'まちがって つかわれている 漢字を 見つけて、正しい漢字を 書きなさい。',
+  note: '本番は 文の中から さがします。ここでは ことばだけで れんしゅうします。',
+};
+
+/**
+ * その級で れんしゅうできる分野の一覧。
+ *
+ * 5級には誤字訂正を足しています。公式の「主な出題内容」には載っているのに、
+ * 手元の問題見本（2024年度第3回）には出ていなかったためです。
+ * 模擬試験の点数を狂わせないよう、れんしゅうでだけ扱います。
+ */
+export function practiceList(kyu: Kyu): PracticeSpec[] {
+  const spec = kyu === 6 ? SPEC_6 : SPEC_5;
+  const list: PracticeSpec[] = spec.map((sp) => ({
+    id: sp.id, no: sp.no, title: sp.title, instruction: sp.instruction,
+  }));
+  if (kyu === 5) list.push(GOJITEI);
+  return list;
+}
+
+export interface Practice {
+  id: SectionId;
+  no: string;
+  title: string;
+  instruction: string;
+  note?: string;
+  questions: ExamQuestion[];
+}
+
+/**
+ * 分野を1つだけ選んで、れんしゅう問題を作る。
+ *
+ * 作れた数が count より少ないこともあります（データの確認まちなど）。
+ * 0問のときは null を返すので、呼ぶ側で「いまは出せません」と伝えてください。
+ *
+ * @param count 何問ほしいか。部首と筆順は1つの漢字から2問できるので、偶数にしてください
+ */
+export function buildPractice(
+  kyu: Kyu, data: ExamData, id: SectionId, count = 10, seed = Date.now(),
+): Practice | null {
+  const info = practiceList(kyu).find((x) => x.id === id);
+  if (!info) return null;
+  const rand = makeRng(seed);
+  const ctx = makeCtx(kyu, data, rand);
+  let idc = 0;
+  const questions = buildSection(
+    { id, no: info.no, title: info.title, instruction: info.instruction, count, pointsEach: 1 },
+    { ...ctx, nextId: () => `p${++idc}` },
+  );
+  if (questions.length === 0) return null;
+  return { ...info, questions: questions.slice(0, count) };
+}
+
 interface Ctx {
   kyu: Kyu;
   kanji: KanjiEntry[];
@@ -224,6 +308,8 @@ interface Ctx {
   w2: WordEntry[];
   w3: WordEntry[];
   w4: WordEntry[];
+  /** 出典のあるなし関係なく、言葉として存在するものすべて */
+  allWords: Set<string>;
   data: ExamData;
   rand: () => number;
   nextId: () => string;
@@ -467,6 +553,46 @@ function buildSection(sp: SectionSpec, c: Ctx): ExamQuestion[] {
             answer: target, writeChar: target, writeGrade: c.byChar.get(target)?.grade ?? 1,
           });
         }
+      }
+      return out;
+    }
+
+    // ───────── 誤字訂正（分野べつれんしゅう だけ） ─────────
+    case 'gojitei': {
+      // 同じ読みの ちがう漢字に すりかわった ことばを 見つけて、正しく直す問題。
+      //
+      // 本番は「文の中」から探しますが、このアプリでは **ことばだけ** で出します。
+      // 例文を勝手に作ると、出典のない日本語をお子さんに読ませることになるためです。
+      const byOn = new Map<string, string[]>();
+      for (const k of c.kanji) for (const o of k.on) {
+        if (!byOn.has(o.kana)) byOn.set(o.kana, []);
+        byOn.get(o.kana)!.push(k.c);
+      }
+      const out: ExamQuestion[] = [];
+      for (const w of shuffle(c.w2.filter((x) => x.freq !== null), c.rand)) {
+        if (out.length >= sp.count) break;
+        if (/[一二三四五六七八九十百千万億兆]/.test(w.w)) continue;   // 数の語はさける
+        const cs = [...w.w];
+        const i = Math.floor(c.rand() * 2);
+        const target = cs[i];
+        const r = w.p[i];
+        if (!r) continue;
+        const k = c.byChar.get(target);
+        const on = k?.on.find((o) => readingMatches(r, o.kana));
+        if (!on) continue;
+        // 入れかえても「本物の言葉」になってしまうものは使わない
+        //（そうしないと、どちらが正しいか決められなくなる）
+        const cand = (byOn.get(on.kana) ?? []).filter(
+          (y) => y !== target && !c.allWords.has(cs.map((x, j) => (j === i ? y : x)).join('')),
+        );
+        if (cand.length === 0) continue;
+        const wrong = cand[Math.floor(c.rand() * cand.length)];
+        out.push({
+          ...base, id: c.nextId(), kind: 'write' as const,
+          prompt: cs.map((x, j) => (j === i ? wrong : x)).join(''),
+          hint: `「${w.r}」と 読みたいのに、漢字が 一字 まちがっています。正しい漢字を 書こう`,
+          answer: target, writeChar: target, writeGrade: k!.grade,
+        });
       }
       return out;
     }

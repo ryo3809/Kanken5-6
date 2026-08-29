@@ -132,7 +132,7 @@ export interface SessionRecord {
   finishedAt: number;
   kyu: Kyu;
   /** 出した問題の分野 */
-  mode: 'reading' | 'tracing' | 'writing';
+  mode: 'reading' | 'tracing' | 'writing' | 'practice';
   total: number;
   correct: number;
   /** まちがえた漢字 */

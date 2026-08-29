@@ -19,6 +19,10 @@ export const EXP = {
   writingOther: 2,
   /** なぞり書きで1字なぞれた */
   tracingChar: 6,
+  /** 分野べつれんしゅうで1問こたえた（正解） */
+  practiceCorrect: 3,
+  /** 分野べつれんしゅうで1問こたえた（まちがい）※ゼロにはしない */
+  practiceWrong: 1,
   /** その日はじめての学習 */
   firstOfDay: 10,
 };

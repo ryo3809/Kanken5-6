@@ -613,3 +613,30 @@ label.field .control button[aria-pressed='true'] {
 }
 .daybar > div.on { background: var(--accent); }
 .daybar > span { font-size: 11px; color: var(--muted); }
+
+/* ───── ぶんやべつ れんしゅう ───── */
+
+.practicelist { display: grid; gap: 8px; margin-bottom: 16px; }
+.practiceitem {
+  display: grid;
+  grid-template-columns: 52px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  padding: 12px 14px;
+  font-size: 17px;
+}
+.practiceitem .no { color: var(--muted); font-size: 15px; }
+.practiceitem .title { display: grid; gap: 2px; }
+.practiceitem .note { font-size: 12px; color: var(--muted); }
+.practiceitem .rate { font-size: 14px; color: var(--muted); }
+.practiceitem.weak { border-color: var(--accent); }
+.practiceitem.weak .rate { color: var(--accent); font-weight: 700; }
+
+.bigchars {
+  font-size: 34px;
+  line-height: 1.6;
+  text-align: center;
+  letter-spacing: 0.04em;
+  margin: 6px 0;
+}

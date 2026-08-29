@@ -316,6 +316,49 @@ runScript('データの検証', async () => {
   );
   must('三字熟語に会社名・学校名が混ざっていない', proper.length === 0, proper.map((w) => w.w));
 
+  // ── 検証12：5級（フェーズ8）────────────────────────────────
+  log.step('検証12　5級として成り立っているか');
+  const g6 = kanji.filter((k) => k.grade === 6);
+  log.ok(`6年生の漢字 ${g6.length}字（5級で新しく加わる分）`);
+  must('6年生の漢字が191字ある', g6.length === 191, `${g6.length}字`);
+
+  // 5級で出題できない漢字（熟語が1つも確認ずみになっていない字）
+  const usableChars = new Set();
+  for (const w of words) {
+    if (!w.verified) continue;
+    for (const c of w.w) usableChars.add(c);
+  }
+  const blocked5 = kanji.filter((k) => !usableChars.has(k.c));
+  const blocked6 = kanji.filter((k) => k.grade <= 5 && !usableChars.has(k.c));
+  log[blocked6.length === 0 ? 'ok' : 'ng'](
+    blocked6.length === 0
+      ? '6級の835字は、すべて出題できる'
+      : `6級で出題できない漢字：${blocked6.map((k) => k.c).join('')}`,
+  );
+  must('6級の漢字がすべて出題できる', blocked6.length === 0, blocked6.map((k) => k.c));
+  log[blocked5.length === 0 ? 'ok' : 'warn'](
+    blocked5.length === 0
+      ? '5級の1026字は、すべて出題できる'
+      : `5級で出題できない漢字：${blocked5.map((k) => k.c).join('')}（承認まち）`,
+  );
+  should('5級の漢字がすべて出題できる', blocked5.length === 0, blocked5.map((k) => k.c));
+
+  // 5級の四字熟語（6級の三字熟語にあたるもの）が足りているか
+  const yoji5 = words.filter((w) => w.yoji && w.verified);
+  should('5級で使える四字熟語が50語以上ある', yoji5.length >= 50, `${yoji5.length}語`);
+
+  // 誤字訂正（分野べつれんしゅう）に使える「同じ音読みの別の漢字」があるか
+  const byOn = new Map();
+  for (const k of kanji) {
+    for (const o of k.on ?? []) {
+      if (!byOn.has(o.kana)) byOn.set(o.kana, new Set());
+      byOn.get(o.kana).add(k.c);
+    }
+  }
+  const sharedOn = [...byOn.values()].filter((set) => set.size >= 2).length;
+  log.ok(`同じ音読みをもつ漢字の組が ${sharedOn}とおり（誤字訂正・同音異字に使う）`);
+  must('同じ音読みの組が100とおり以上ある', sharedOn >= 100, `${sharedOn}とおり`);
+
   // ── まとめ ───────────────────────────────────────────────────
   console.log(`\n${'='.repeat(60)}`);
   const mustList = results.filter((r) => r.level === 'must');

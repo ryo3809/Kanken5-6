@@ -118,7 +118,8 @@ export async function loadState(root = ROOT) {
  *   1. まず「対義語・類義語」と「熟語の構成」を交互に。ここが済むと模試が200点満点になる
  *      （分類がかたよらないよう、対義語/類義語、ア/イ/ウ/エ を順ぐりに取る）
  *   2. つぎに「部首」（9件だけなので、すぐ終わる）
- *   3. のこりの対義語・熟語の構成、最後に「熟語の読み」
+ *   3. 「熟語の読み」（2件だけ。承認されないと、その漢字が1字まるごと出題できない）
+ *   4. のこりの対義語・熟語の構成
  */
 export function planNext(state, n = 20) {
   const roundRobin = (rows) => {
@@ -170,8 +171,9 @@ export function planNext(state, n = 20) {
     if (picked.length >= n) break;
     if (needKozo > 0 && take('kozo')) needKozo--; else needKozo = 0;
   }
-  // 2. 部首 → 3. のこり
-  for (const kind of ['radical', 'pair', 'kozo', 'word']) {
+  // 2. 部首（9件だけ）→ 3. 熟語の読み（2件だけ。1件でも漢字1字が丸ごと出題できずにいる）
+  //    → 4. のこり
+  for (const kind of ['radical', 'word', 'pair', 'kozo']) {
     while (picked.length < n && q[kind].length > 0) take(kind);
   }
   return picked;

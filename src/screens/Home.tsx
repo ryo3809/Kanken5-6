@@ -25,6 +25,10 @@ interface Props {
   onOpenZukan: () => void;
   onOpenDressup: () => void;
   onOpenExam: () => void;
+  onOpenPractice: () => void;
+  onOpenNextKyu: () => void;
+  /** 模擬試験で合格ラインに届いた回数（5級をすすめるかの目安） */
+  examPassed: number;
   /** これまでの模試の最高点（まだなら null） */
   examBest: number | null;
   examCount: number;
@@ -158,7 +162,26 @@ export function Home(props: Props) {
             これまで {props.examCount}回　いちばん よかった点 {props.examBest}点
           </p>
         )}
+        <p className="muted" style={{ marginTop: 16 }}>
+          にがてな ところだけを 10問ずつ れんしゅうすることも できます。
+        </p>
+        <button className="wide" onClick={props.onOpenPractice}>
+          🎯 ぶんやべつ れんしゅう
+        </button>
       </div>
+
+      {settings.kyu === 6 && props.examPassed >= 2 && (
+        <div className="card">
+          <h2>つぎの きゅうへ</h2>
+          <p className="muted">
+            もぎしけんで {props.examPassed}回 ごうかくラインを こえたね。
+            5級（小学6年生まで）に すすんでみる？ きろくは 1つも きえません。
+          </p>
+          <button className="wide" onClick={props.onOpenNextKyu}>
+            🌱 5級を 見てみる
+          </button>
+        </div>
+      )}
 
       <div className="card">
         <h2>しばまると あそぶ</h2>

@@ -26,6 +26,7 @@ import { Result } from './screens/Result';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { BackupScreen } from './screens/BackupScreen';
 import { AboutScreen } from './screens/AboutScreen';
+import { NextKyuScreen } from './screens/NextKyuScreen';
 import { Tracing } from './screens/Tracing';
 import { Writing, type WritingResult } from './screens/Writing';
 import { preloadGrade } from './lib/strokeStore';
@@ -33,7 +34,11 @@ import { EXP, levelFromExp, mapProgress, MAP_SPOTS, unlockedItems } from './lib/
 import { MapScreen } from './screens/MapScreen';
 import { DressupScreen } from './screens/DressupScreen';
 import { ZukanScreen } from './screens/ZukanScreen';
-import { buildExam, isAutoScored, type Exam } from './lib/exam';
+import { buildExam, isAutoScored, type Exam, type ExamData } from './lib/exam';
+import {
+  PracticeScreen, PracticeResultView, type PracticeResult,
+} from './screens/PracticeScreen';
+import { examSummary, sectionStats } from './lib/parent';
 import { ExamScreen, autoScore, type ExamAnswer } from './screens/ExamScreen';
 import { ExamGrading } from './screens/ExamGrading';
 import { ExamResultScreen, passLine } from './screens/ExamResultScreen';
@@ -82,6 +87,7 @@ type Screen =
   | 'writing' | 'writingResult'
   | 'map' | 'zukan' | 'dressup'
   | 'examIntro' | 'exam' | 'examGrading' | 'examResult'
+  | 'practice' | 'practiceResult' | 'nextKyu'
   | 'settings' | 'backup' | 'about';
 
 /** なぞり書き1回ぶんの字数 */
@@ -122,6 +128,7 @@ export default function App() {
   const [examMeta, setExamMeta] = useState<{ seconds: number; timedOut: boolean }>({ seconds: 0, timedOut: false });
   const [examResult, setExamResult] = useState<ExamResult | null>(null);
   const [examHistory, setExamHistory] = useState<ExamResult[]>([]);
+  const [practiceResult, setPracticeResult] = useState<PracticeResult | null>(null);
   // 画面の再描画を待たずに、いつでも最新のしばまるの状態を読めるようにしておく。
   // （フェーズ2で、古い値を読んで二重に計算する不具合が出たため、同じ作りにしています）
   const gameRef = useRef<GameState>(DEFAULT_GAME);
@@ -226,11 +233,70 @@ export default function App() {
     setScreen('session');
   }
 
+  // ── 分野べつれんしゅう ──────────────────────────
+  const examData: ExamData = useMemo(
+    () => ({ kanji: ALL_KANJI, words: ALL_WORDS, pairs: ALL_PAIRS, kozo: ALL_KOZO }),
+    [],
+  );
+  /** 模擬試験で合格ライン（200点満点に直して140点）に届いた回数 */
+  const examPassed = useMemo(() => examSummary(examHistory).passed, [examHistory]);
+  /** 大問番号 → 正答率（模擬試験の記録から。にがて印に使う） */
+  const weakRates = useMemo(
+    () => new Map(sectionStats(examHistory).map((s) => [s.no, s.rate])),
+    [examHistory],
+  );
+
+  /**
+   * 分野べつれんしゅうが終わったとき。
+   *
+   * 復習の箱（1〜5）はここでは動かしません。
+   * 同じ字を2つの道すじで進めると、復習の間隔がくるってしまうためです。
+   * 記録として残すのは「学習した」ことと、手書きの自己採点だけです。
+   */
+  async function finishPractice(res: PracticeResult) {
+    setPracticeResult(res);
+    setScreen('practiceResult');
+    if (res.answers.length === 0) return;
+    try {
+      const now = Date.now();
+      const today = toDateKey();
+      const grades: SelfGradeRecord[] = res.answers
+        .filter((a) => a.grade)
+        .map((a) => ({ date: today, at: now, c: a.char, word: a.word, grade: a.grade! }));
+      if (grades.length > 0) {
+        await addSelfGrades(grades);
+        setSelfGrades((prev) => [...grades, ...prev]);
+      }
+      const first = isFirstOfDay();
+      await recordSession({
+        date: today,
+        startedAt: now - res.answers.length * 20000,
+        finishedAt: now,
+        kyu: settings.kyu,
+        mode: 'practice',
+        total: res.answers.length,
+        correct: res.answers.filter((a) => a.correct).length,
+        wrongChars: res.answers.filter((a) => !a.correct).map((a) => a.char),
+      });
+      setSessionDates((d) => [...d, today]);
+      setSessionCount((n) => n + 1);
+      setTodayAnswered((n) => n + res.answers.length);
+      setSaveError(null);
+      const gained = res.answers.reduce(
+        (n, a) => n + (a.correct ? EXP.practiceCorrect : EXP.practiceWrong),
+        0,
+      );
+      await addExp(gained, { firstOfDay: first });
+    } catch (e) {
+      setSaveError(
+        e instanceof StorageError ? e.kidMessage : 'きろくの ほぞんに しっぱいしました。',
+      );
+    }
+  }
+
   // ── 模擬試験 ────────────────────────────────────
   function prepareExam() {
-    const e = buildExam(settings.kyu, {
-      kanji: ALL_KANJI, words: ALL_WORDS, pairs: ALL_PAIRS, kozo: ALL_KOZO,
-    });
+    const e = buildExam(settings.kyu, examData);
     setExam(e);
     setExamAnswers(new Map());
     setExamResult(null);
@@ -620,6 +686,9 @@ export default function App() {
           onOpenZukan={() => setScreen('zukan')}
           onOpenDressup={() => setScreen('dressup')}
           onOpenExam={prepareExam}
+          onOpenPractice={() => setScreen('practice')}
+          onOpenNextKyu={() => setScreen('nextKyu')}
+          examPassed={examPassed}
           examBest={examHistory.length === 0 ? null : Math.max(...examHistory.map((e) => e.score))}
           examCount={examHistory.length}
           tracedCount={traces.size}
@@ -873,6 +942,39 @@ export default function App() {
       )}
 
       {screen === 'about' && <AboutScreen onBack={() => setScreen('backup')} />}
+
+      {screen === 'nextKyu' && (
+        <NextKyuScreen
+          kyu={settings.kyu}
+          kanji={ALL_KANJI}
+          learned={new Set(progress.keys())}
+          passedCount={examPassed}
+          onChangeKyu={(k) => {
+            void changeSettings({ ...settings, kyu: k });
+            setScreen('home');
+          }}
+          onBack={() => setScreen('home')}
+        />
+      )}
+
+      {screen === 'practice' && (
+        <PracticeScreen
+          kyu={settings.kyu}
+          data={examData}
+          kanjiByChar={kanjiByChar}
+          weakRates={weakRates}
+          onFinish={(r) => void finishPractice(r)}
+          onBack={() => setScreen('home')}
+        />
+      )}
+
+      {screen === 'practiceResult' && practiceResult && (
+        <PracticeResultView
+          result={practiceResult}
+          onAgain={() => setScreen('practice')}
+          onBack={() => setScreen('home')}
+        />
+      )}
     </ErrorBoundary>
   );
 }
