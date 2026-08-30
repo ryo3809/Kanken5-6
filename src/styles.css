@@ -226,6 +226,11 @@ label.field .control button[aria-pressed='true'] {
   overflow: hidden;
   /* 書いている最中に画面が動かないようにする */
   touch-action: none;
+  /* 指で長く押したときに、文字選択やメニューが出ないようにする
+     （これが出ると、書いている線が途切れます） */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 .tracebox.drawing { border-color: var(--accent); }
 

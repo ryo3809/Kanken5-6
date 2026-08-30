@@ -63,6 +63,9 @@ export function useInk({
   // 1画のあいだ、マスの位置と大きさを覚えておく。
   // 指を動かすたびに測り直すと重くなるうえ、途中で画面が動くと座標がずれるため。
   const rectRef = useRef<DOMRect | null>(null);
+  // 既定の動きを止めるかどうかを、いつでも読めるようにしておく
+  const disabledRef = useRef(false);
+  disabledRef.current = !!disabled;
 
   /** キャンバスの大きさを、表示の大きさと画面の細かさに合わせる */
   const fitCanvas = useCallback(() => {
@@ -91,6 +94,38 @@ export function useInk({
     if (boxRef.current) ro.observe(boxRef.current);
     return () => ro.disconnect();
   }, [fitCanvas]);
+
+  /*
+    iPad で、指で書いている最中に線が途切れないようにする。
+
+    touch-action: none だけでは足りません。
+    書いている最中に手のひらや2本目の指が画面にふれると、
+    iOS が「拡大や画面送りの操作だ」と判断して、
+    書いている途中の入力を取り消してしまうことがあります
+    （これが「指でなぞるとすぐ途切れる」の原因になります）。
+
+    そこで、マスの上での既定の動き（スクロール・拡大・文字選択）を
+    ここで止めています。React 経由では止められないため、
+    ブラウザに直接お願いしています（passive: false）。
+
+    書けない状態（こたえを見たあとなど）のときは止めません。
+    画面がスクロールできなくなってしまうからです。
+  */
+  useEffect(() => {
+    const box = boxRef.current;
+    if (!box) return;
+    const stop = (e: Event) => {
+      if (!disabledRef.current && e.cancelable) e.preventDefault();
+    };
+    const names = [
+      'touchstart', 'touchmove', 'touchend', 'touchcancel',
+      // Safari だけにある、拡大の操作
+      'gesturestart', 'gesturechange', 'gestureend',
+    ];
+    const opts: AddEventListenerOptions = { passive: false };
+    for (const n of names) box.addEventListener(n, stop, opts);
+    return () => { for (const n of names) box.removeEventListener(n, stop, opts); };
+  }, []);
 
 
   /** キャンバスを白紙にする（覚えている線は消さない） */
@@ -254,11 +289,12 @@ export function useInk({
       onEvent?.('up', e.pointerType);
       finish(e);
     },
-    // ブラウザが「これは画面のスクロールだ」と判断したときに来る。
-    // ここまでに書けた線は、捨てずに残す。
+    // ブラウザに入力を取り消されたときに来る。
+    // なぞり書きでは、途中まで書けた線を「まちがい」として採点しません。
+    // 本人は最後まで書いたつもりなのに、×をつけられるのは理不尽だからです。
     onPointerCancel(e: React.PointerEvent) {
       onEvent?.('cancel', e.pointerType);
-      finish(e);
+      finish(e, true);
     },
     // 入力の受けとりを失ったときの受け皿。
     // ※ onPointerLeave では終わらせません。
@@ -271,7 +307,7 @@ export function useInk({
     },
   };
 
-  function finish(e: React.PointerEvent) {
+  function finish(e: React.PointerEvent, cancelled = false) {
     if (activePointerRef.current !== e.pointerId) return;
     activePointerRef.current = null;
     setDrawing(false);
@@ -279,6 +315,13 @@ export function useInk({
     const pts = ptsRef.current;
     rectRef.current = null;
     if (!r || pts.length === 0) return;
+    // なぞり書き（1画ずつ判定するもの）で取り消されたら、
+    // その線は無かったことにして、もう一度書いてもらう
+    if (cancelled && clearOnStart) {
+      ptsRef.current = [];
+      wipeCanvas();
+      return;
+    }
     if (!clearOnStart) {
       // 書き取りのように何画も書くときは、1本ずつ覚えておく（あとで1画もどせるように）
       strokesRef.current = [...strokesRef.current, pts];

@@ -214,7 +214,7 @@ npm test
 |---|---|
 | `npm run dev` | アプリを開いて動かす |
 | `npm run build` | 配布用のファイルを作る（`dist/` にできる。オフライン用のしくみも一緒に作られます） |
-| `npm test` | 自動テストを全部走らせる（518件） |
+| `npm test` | 自動テストを全部走らせる（528件） |
 | `npm run csv:status` | 承認の進みぐあいを見る |
 | `npm run csv:next` | 次に見てほしい20件だけを1枚のCSVに書き出す |
 | `npm run csv:merge` | そのCSVに書いた「OK」を承認ファイルに書きもどす |

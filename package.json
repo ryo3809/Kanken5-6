@@ -16,7 +16,7 @@
     "typecheck": "tsc --noEmit",
     "test:logic": "node --experimental-strip-types --no-warnings scripts/test/logic-test.mts",
     "test:browser": "node scripts/test/browser-test.mjs",
-    "test": "npm run test:logic && npm run test:tracing && npm run test:game && npm run test:exam && npm run test:approve && npm run build && npm run test:browser && npm run test:browser-tracing && npm run test:browser-writing && npm run test:browser-game && npm run test:browser-exam && npm run test:browser-pwa && npm run test:browser-practice",
+    "test": "npm run test:logic && npm run test:tracing && npm run test:game && npm run test:exam && npm run test:approve && npm run build && npm run test:browser && npm run test:browser-tracing && npm run test:browser-writing && npm run test:browser-game && npm run test:browser-exam && npm run test:browser-pwa && npm run test:browser-practice && npm run test:browser-touch",
     "test:tracing": "node --experimental-strip-types --no-warnings scripts/test/tracing-test.mts",
     "test:browser-tracing": "node scripts/test/tracing-browser-test.mjs",
     "test:browser-writing": "node scripts/test/writing-browser-test.mjs",
@@ -31,7 +31,8 @@
     "test:approve": "node scripts/test/approve-batch-test.mjs",
     "icons": "node scripts/make-icons.mjs",
     "test:browser-pwa": "node scripts/test/pwa-browser-test.mjs",
-    "test:browser-practice": "node scripts/test/practice-browser-test.mjs"
+    "test:browser-practice": "node scripts/test/practice-browser-test.mjs",
+    "test:browser-touch": "node scripts/test/touch-browser-test.mjs"
   },
   "dependencies": {
     "idb": "^8.0.3",

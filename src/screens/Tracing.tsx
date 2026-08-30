@@ -25,6 +25,13 @@ export function Tracing({ queue, onFinish, onQuit }: Props) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [charDone, setCharDone] = useState(false);
   const [confirmQuit, setConfirmQuit] = useState(false);
+  /**
+   * ブラウザに入力を取り消されたか。
+   * 指が2本ふれると、iPad が「拡大の操作」と勘ちがいして
+   * 書いている線を取り消すことがあります。
+   * だまって消えると原因が分からないので、声をかけます。
+   */
+  const [interrupted, setInterrupted] = useState(false);
   const retriesRef = useRef(0);
   const tracedRef = useRef<string[]>([]);
 
@@ -39,6 +46,7 @@ export function Tracing({ queue, onFinish, onQuit }: Props) {
     setVerdict(null);
     setCharDone(false);
     setLoadError(null);
+    setInterrupted(false);
     getStrokes(kanji.c, kanji.grade)
       .then((paths) => {
         if (alive) setRefs(prepareStrokes(paths));
@@ -59,6 +67,7 @@ export function Tracing({ queue, onFinish, onQuit }: Props) {
   const handleStroke = useCallback(
     (points: Point[]) => {
       if (!refs) return;
+      setInterrupted(false);   // ちゃんと1画書けたので、注意は消す
       const v = judgeStroke(points, refs, stroke);
       setVerdict(v);
       if (v.ok) {
@@ -118,6 +127,7 @@ export function Tracing({ queue, onFinish, onQuit }: Props) {
               onStroke={handleStroke}
               lastWrong={!!verdict && !verdict.ok}
               disabled={charDone}
+              onInterrupted={() => setInterrupted(true)}
             />
 
             {/* 何画目まで書けたかの目やす */}
@@ -156,6 +166,15 @@ export function Tracing({ queue, onFinish, onQuit }: Props) {
           <button className="primary" onClick={nextChar}>
             {index + 1 >= queue.length ? 'おわる' : 'つぎの かんじ'}
           </button>
+        </div>
+      ) : interrupted ? (
+        <div className="notice bad">
+          <b>せんが とちゅうで きれちゃった</b>
+          <br />
+          <span className="muted">
+            ゆびを <b>1本だけ</b> つけて、もういちど なぞってね。
+            （手のひらが がめんに ついていると、うまく かけません）
+          </span>
         </div>
       ) : verdict && !verdict.ok ? (
         <div className="notice bad">

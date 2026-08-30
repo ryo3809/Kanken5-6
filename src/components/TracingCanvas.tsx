@@ -18,14 +18,20 @@ interface Props {
   lastWrong: boolean;
   /** 書けない状態（判定を見せているあいだなど） */
   disabled?: boolean;
+  /** ブラウザに入力を取り消されたとき（指が複数ふれた場合など） */
+  onInterrupted?: () => void;
 }
 
-export function TracingCanvas({ refs, current, onStroke, lastWrong, disabled }: Props) {
+export function TracingCanvas({
+  refs, current, onStroke, lastWrong, disabled, onInterrupted,
+}: Props) {
   const ink = useInk({
     color: lastWrong ? '#d2694a' : '#33302b',
     clearOnStart: true, // なぞり書きは1画ずつなので、書きはじめに前の線を消す
     disabled,
     onStrokeEnd: (pts, rect) => onStroke(toKvgCoords(pts, rect)),
+    // 取り消されたときは採点しない代わりに、画面から声をかける
+    onEvent: (kind) => { if (kind === 'cancel') onInterrupted?.(); },
   });
 
   // 次の画に進んだら、書いた線を消す
