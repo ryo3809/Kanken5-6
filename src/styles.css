@@ -640,3 +640,22 @@ label.field .control button[aria-pressed='true'] {
   letter-spacing: 0.04em;
   margin: 6px 0;
 }
+
+/* ───── おうちの人の画面：オフラインの調べ ───── */
+
+.diag {
+  margin-top: 10px;
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+.diag > div {
+  display: grid;
+  grid-template-columns: 11em 1fr;
+  gap: 8px;
+  padding: 4px 0;
+  border-top: 1px solid var(--line);
+}
+.diag > div.wide { grid-template-columns: 1fr; gap: 2px; }
+.diag span { color: var(--muted); }
+.diag b { word-break: break-all; font-weight: 600; }

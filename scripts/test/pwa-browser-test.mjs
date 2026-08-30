@@ -66,8 +66,15 @@ console.log('\n\x1b[1m2. オフライン用のしくみの中身\x1b[0m');
   check('外部のURLがひとつも書かれていない', !/https?:\/\/(?!www\.w3\.org)/.test(sw));
   check('筆順のデータもためこむ', sw.includes('./strokes/grade-6.json'));
   check('版番号が差しこまれている', !sw.includes('__VERSION__') && !sw.includes('__PRECACHE__'));
+  // 入れたそばから新しい版に切りかわると、子どもが問題を解いている最中に
+  // 画面が入れかわってしまう。切りかえは画面のボタンからだけにする。
+  const installBlock = sw.slice(sw.indexOf("addEventListener('install'"), sw.indexOf("addEventListener('activate'"));
   check('勝手に切りかわらない（画面から言われたときだけ）',
-    sw.includes("event.data.type === 'SKIP_WAITING'") && !/^\s*self\.skipWaiting\(\);\s*$/m.test(sw));
+    sw.includes("type === 'SKIP_WAITING'")
+    && (sw.match(/skipWaiting/g) ?? []).length === 1
+    && !installBlock.includes('skipWaiting'));
+  check('画面から状態を聞ける', sw.includes("type === 'STATUS'"));
+  check('保存をやり直せる', sw.includes("type === 'RECACHE'"));
 
   const headers = readFileSync('dist/_headers', 'utf8');
   check('外部への通信をブラウザ側でも禁止している',
@@ -245,6 +252,18 @@ console.log('\n\x1b[1m5. おうちの人の画面\x1b[0m');
   check('グラフの棒が14本ある', (await page.locator('.daybar').count()) === 14);
   check('きょうの棒に色がついている', (await page.locator('.daybar > div.on').count()) === 1);
   check('消す操作には確認がある', body.includes('元に戻せません'));
+
+  // オフラインの準備がうまくいかないときに、理由を見られるか
+  await page.getByRole('button', { name: '調べる' }).click();
+  await page.waitForTimeout(2500);
+  const diag = await page.locator('.diag').innerText();
+  check('オフラインの状態を調べられる', (await page.locator('.diag').count()) === 1);
+  check('登録できているかが分かる', diag.includes('しくみの登録'));
+  check('保存できたファイル数が分かる', /保存できたファイル\s*\d+/.test(diag), diag.match(/保存できたファイル\s*\S+/)?.[0] ?? '');
+  check('sw.js の状態が分かる', diag.includes('sw.js の状態') && diag.includes('HTTP 200'));
+  check('サーバーの安全設定が見える', diag.includes('サーバーの安全設定'));
+  check('「いますぐ 保存する」ボタンがある',
+    (await page.getByRole('button', { name: /いますぐ 保存する/ }).count()) === 1);
 
   await page.screenshot({ path: `${SHOTS}/pwa-parent.png`, fullPage: true });
 

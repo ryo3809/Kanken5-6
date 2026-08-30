@@ -8,7 +8,7 @@ import type { ExamResult, SelfGradeRecord, SessionRecord } from '../lib/types';
 import { downloadBackup, restoreFromFile } from '../lib/backup';
 import { eraseAll } from '../lib/db';
 import { examSummary, recentDays, scaleTo200, sectionStats, selfGradeWarning } from '../lib/parent';
-import { isStandalone } from '../lib/pwa';
+import { isStandalone, offlineStatus, recacheNow, type OfflineStatus } from '../lib/pwa';
 
 interface Props {
   onBack: () => void;
@@ -42,7 +42,7 @@ const GRADE_LABEL: Record<SelfGradeRecord['grade'], string> = {
   ng: '✗ まちがえた',
 };
 
-type Busy = null | 'export' | 'import' | 'erase';
+type Busy = null | 'export' | 'import' | 'erase' | 'check' | 'recache';
 
 export function BackupScreen({
   onBack, onDataChanged, counts, selfGrades, exams, sessions, lastBackupAt, onBackupDone,
@@ -54,6 +54,8 @@ export function BackupScreen({
   const [eraseStep, setEraseStep] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
   const [showAllGrades, setShowAllGrades] = useState(false);
+  /** オフラインの準備を調べた結果（ボタンを押したときだけ入る） */
+  const [offline, setOffline] = useState<OfflineStatus | null>(null);
 
   const summary = useMemo(() => examSummary(exams), [exams]);
   const weak = useMemo(() => sectionStats(exams), [exams]);
@@ -71,6 +73,37 @@ export function BackupScreen({
     const close = selfGrades.filter((g) => g.grade === 'close').length;
     return { n, ok, close, ng: n - ok - close, okRate: n === 0 ? 0 : Math.round((ok / n) * 100) };
   }, [selfGrades]);
+
+  async function handleCheckOffline() {
+    setBusy('check');
+    setError(null);
+    setMessage(null);
+    try {
+      setOffline(await offlineStatus());
+    } catch (e) {
+      setError(`調べられませんでした。${e instanceof Error ? e.message : ''}`);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleRecache() {
+    setBusy('recache');
+    setError(null);
+    setMessage(null);
+    try {
+      const n = await recacheNow();
+      setMessage(`${n}個のファイルを保存しました。電波を切って開けるか試してみてください。`);
+      setOffline(await offlineStatus());
+    } catch (e) {
+      setError(
+        `保存できませんでした。${e instanceof Error ? e.message : ''}\n`
+        + 'ホーム画面のアイコンから開いているか、電波がつながっているかを確かめてください。',
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
 
   async function handleExport() {
     setBusy('export');
@@ -166,12 +199,62 @@ export function BackupScreen({
         )}
       </div>
 
-      <div className={offlineReady ? 'notice' : 'notice'}>
+      <div className={offlineReady ? 'notice' : 'notice bad'}>
         <b>2. 電波がなくても使えるか</b>
         <br />
         {offlineReady
           ? 'このiPadには、アプリ本体が保存ずみです。電波がなくても使えます。'
-          : 'まだ準備中です。この画面をひらいたまま少し待つか、一度アプリを開きなおしてください。'}
+          : 'まだ準備できていません。下の「調べる」を押すと、理由が分かります。'}
+        <div className="row" style={{ marginTop: 10 }}>
+          <button disabled={busy !== null} onClick={() => void handleCheckOffline()}>
+            {busy === 'check' ? '調べています…' : '調べる'}
+          </button>
+          <button disabled={busy !== null} onClick={() => void handleRecache()}>
+            {busy === 'recache' ? '保存しています…' : 'いますぐ 保存する'}
+          </button>
+        </div>
+        {offline && (
+          <div className="diag">
+            <div>
+              <span>オフライン機能への対応</span>
+              <b>{offline.supported ? 'あり' : 'なし'}</b>
+            </div>
+            <div>
+              <span>しくみの登録</span>
+              <b>{offline.registered ? 'できている' : 'できていない'}</b>
+            </div>
+            <div>
+              <span>いま動いているか</span>
+              <b>{offline.controlling ? '動いている' : '動いていない'}</b>
+            </div>
+            <div>
+              <span>保存できたファイル</span>
+              <b>
+                {offline.cached}
+                {offline.expected > 0 ? ` / ${offline.expected}` : ''} 個
+              </b>
+            </div>
+            {offline.error && (
+              <div className="wide">
+                <span>登録できなかった理由</span>
+                <b>{offline.error}</b>
+              </div>
+            )}
+            {offline.swFile && (
+              <div className="wide">
+                <span>sw.js の状態</span>
+                <b>{offline.swFile}</b>
+              </div>
+            )}
+            <div className="wide">
+              <span>サーバーの安全設定</span>
+              <b>{offline.csp ?? '（設定なし）'}</b>
+            </div>
+            <p className="muted" style={{ margin: '8px 0 0' }}>
+              うまくいかないときは、この画面をそのまま見せてください。原因が分かります。
+            </p>
+          </div>
+        )}
       </div>
 
       <div className={backupStale ? 'notice bad' : 'notice'}>

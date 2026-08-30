@@ -57,9 +57,52 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// ── 画面から「新しい版に切りかえて」と言われたときだけ切りかえる ──
+// ── 画面からの問い合わせ ─────────────────────────────────
 self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
+  const type = event.data && event.data.type;
+  const reply = event.ports && event.ports[0];
+
+  // 新しい版に切りかえて（画面のボタンから）
+  if (type === 'SKIP_WAITING') {
+    self.skipWaiting();
+    return;
+  }
+
+  // いまの状態を教えて（おうちの人の画面の「しらべる」から）
+  if (type === 'STATUS' && reply) {
+    caches.open(CACHE)
+      .then((cache) => cache.keys())
+      .then((keys) => reply.postMessage({
+        version: VERSION, precache: PRECACHE.length, cached: keys.length,
+      }))
+      .catch(() => reply.postMessage({ version: VERSION, precache: PRECACHE.length, cached: 0 }));
+    return;
+  }
+
+  // もう一度ためこみ直して（一部しか入っていないときのやり直し）
+  if (type === 'RECACHE' && reply) {
+    event.waitUntil((async () => {
+      try {
+        const cache = await caches.open(CACHE);
+        const failed = [];
+        for (const url of PRECACHE) {
+          try {
+            await cache.add(new Request(url, { cache: 'reload' }));
+          } catch (e) {
+            failed.push(url);
+          }
+        }
+        const keys = await cache.keys();
+        reply.postMessage({
+          ok: failed.length === 0,
+          cached: keys.length,
+          error: failed.length ? `${failed.length}個のファイルを保存できませんでした（電波の状態を確かめてください）` : null,
+        });
+      } catch (e) {
+        reply.postMessage({ ok: false, cached: 0, error: String(e && e.message ? e.message : e) });
+      }
+    })());
+  }
 });
 
 // ── ファイルを取りに行くとき ───────────────────────────────

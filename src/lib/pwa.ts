@@ -33,6 +33,33 @@ export function isIOS(): boolean {
 }
 
 /**
+ * オフラインの準備がどうなっているか。
+ * うまくいかないときに、おうちの人の画面で理由が見えるようにするためのもの。
+ */
+export interface OfflineStatus {
+  /** このブラウザがオフライン機能に対応しているか */
+  supported: boolean;
+  /** 登録できたか */
+  registered: boolean;
+  /** いま画面を動かしているか（ここが true でないとオフラインで開けない） */
+  controlling: boolean;
+  /** 登録に失敗した理由（日本語まじりの原文） */
+  error: string | null;
+  /** ためこみ済みのファイル数 */
+  cached: number;
+  /** ためこむ予定のファイル数 */
+  expected: number;
+  /** サーバーが返した安全設定（原因調べに使う） */
+  csp: string | null;
+  /** sw.js を取りに行ったときの結果 */
+  swFile: string | null;
+}
+
+/** 登録に失敗した理由をおぼえておく（画面で見せるため） */
+let lastError: string | null = null;
+let registered = false;
+
+/**
  * オフライン用のしくみを登録する。
  *
  * 失敗しても、アプリの動きには一切影響しません
@@ -51,6 +78,8 @@ export function registerServiceWorker(onUpdateReady: () => void): void {
   navigator.serviceWorker
     .register(url, { scope: import.meta.env.BASE_URL })
     .then((reg) => {
+      registered = true;
+      lastError = null;
       // すでに新しい版が待っている場合
       if (reg.waiting && navigator.serviceWorker.controller) onUpdateReady();
       reg.addEventListener('updatefound', () => {
@@ -62,8 +91,10 @@ export function registerServiceWorker(onUpdateReady: () => void): void {
         });
       });
     })
-    .catch(() => {
-      /* 登録できなくても、アプリはふつうに使える */
+    .catch((e) => {
+      // 登録できなくてもアプリはふつうに使える。
+      // ただし理由を残しておかないと、あとで原因が分からなくなる
+      lastError = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
     });
 
   // 新しい版に切りかわったら、1度だけ画面を読みこみ直す。
@@ -103,4 +134,110 @@ export function shouldShowInstallHint(hiddenUntil: number, now = Date.now()): bo
 /** 「わかった」を押されたときに入れる時刻 */
 export function snoozeUntil(now = Date.now()): number {
   return now + INSTALL_HINT_SNOOZE_DAYS * 24 * 60 * 60 * 1000;
+}
+
+/**
+ * オフラインの準備がどうなっているかを調べる。
+ *
+ * うまくいかないときに、おうちの人の画面で
+ * 「何が起きているのか」を日本語で見せるためのものです。
+ * ここでの通信は、すべて自分自身のファイルに対してだけ行います。
+ */
+export async function offlineStatus(): Promise<OfflineStatus> {
+  const out: OfflineStatus = {
+    supported: typeof navigator !== 'undefined' && 'serviceWorker' in navigator,
+    registered,
+    controlling: false,
+    error: lastError,
+    cached: 0,
+    expected: 0,
+    csp: null,
+    swFile: null,
+  };
+  if (!out.supported) {
+    out.error = out.error ?? 'このブラウザは オフライン機能に対応していません。';
+    return out;
+  }
+
+  try {
+    out.controlling = navigator.serviceWorker.controller !== null;
+    const reg = await navigator.serviceWorker.getRegistration();
+    out.registered = registered || !!reg;
+  } catch {
+    /* 調べられなくても、下の確認は続ける */
+  }
+
+  // ためこみの中身を数える
+  try {
+    const names = await caches.keys();
+    const name = names.find((n) => n.startsWith('kanken-'));
+    if (name) out.cached = (await (await caches.open(name)).keys()).length;
+  } catch {
+    /* 数えられないだけ。致命的ではない */
+  }
+
+  // sw.js が本当に置かれているかを確かめる。
+  // ここが HTML だと、ブラウザは「プログラムではない」と判断して登録に失敗する。
+  try {
+    const res = await fetch(`${import.meta.env.BASE_URL}sw.js`, { cache: 'no-store' });
+    const type = res.headers.get('content-type') ?? '（種類の記載なし）';
+    const head = (await res.text()).slice(0, 60).replace(/\s+/g, ' ');
+    out.swFile = `HTTP ${res.status} ／ ${type} ／ 先頭「${head}」`;
+  } catch (e) {
+    out.swFile = `取りに行けませんでした（${e instanceof Error ? e.message : String(e)}）`;
+  }
+
+  // サーバーが付けている安全設定
+  try {
+    const res = await fetch(`${import.meta.env.BASE_URL}manifest.webmanifest`, { cache: 'no-store' });
+    out.csp = res.headers.get('content-security-policy');
+  } catch {
+    /* 読めなくても、原因調べには影響しない */
+  }
+
+  // ためこむ予定のファイル数は、動いているしくみに聞く
+  try {
+    out.expected = await askServiceWorker();
+  } catch {
+    /* 動いていなければ 0 のまま */
+  }
+  return out;
+}
+
+/** 動いているしくみに「何ファイルためこむ予定か」を聞く（2秒で返事がなければあきらめる） */
+function askServiceWorker(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const sw = navigator.serviceWorker.controller;
+    if (!sw) { reject(new Error('まだ動いていません')); return; }
+    const ch = new MessageChannel();
+    const timer = window.setTimeout(() => reject(new Error('返事がありません')), 2000);
+    ch.port1.onmessage = (e) => {
+      window.clearTimeout(timer);
+      resolve(Number(e.data?.precache ?? 0));
+    };
+    sw.postMessage({ type: 'STATUS' }, [ch.port2]);
+  });
+}
+
+/**
+ * 「いますぐ ぜんぶ保存する」。
+ * 途中で失敗して一部しかためこめていないときに、やり直すためのもの。
+ */
+export async function recacheNow(): Promise<number> {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
+    throw new Error('このブラウザは オフライン機能に対応していません。');
+  }
+  const reg = await navigator.serviceWorker.ready;
+  const sw = navigator.serviceWorker.controller ?? reg.active;
+  if (!sw) throw new Error('オフラインのしくみが まだ動いていません。');
+  return new Promise((resolve, reject) => {
+    const ch = new MessageChannel();
+    const timer = window.setTimeout(() => reject(new Error('時間内に終わりませんでした。')), 60000);
+    ch.port1.onmessage = (e) => {
+      window.clearTimeout(timer);
+      if (e.data?.ok) resolve(Number(e.data.cached ?? 0));
+      else reject(new Error(String(e.data?.error ?? '保存できませんでした。')));
+    };
+    sw.postMessage({ type: 'RECACHE' }, [ch.port2]);
+  });
 }
