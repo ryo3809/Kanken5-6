@@ -267,6 +267,36 @@ console.log('\n\x1b[1m5. おうちの人の画面\x1b[0m');
 
   await page.screenshot({ path: `${SHOTS}/pwa-parent.png`, fullPage: true });
 
+  // ── 手書きの調子をしらべる「ためしがき」 ──
+  await page.getByRole('button', { name: 'ためしがきを ひらく' }).click();
+  await page.waitForSelector('.tracebox', { timeout: 5000 });
+  check('ためしがきのマスが出る', (await page.locator('.tracebox').count()) === 1);
+
+  // マスの外にはみ出す線を書く。
+  // 以前は 枠から出た時点で1画が切れていたので、点の数で確かめる。
+  const box = await page.locator('.tracebox').boundingBox();
+  await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.3);
+  await page.mouse.down();
+  for (let i = 1; i <= 12; i++) {
+    await page.mouse.move(box.x + box.width * 0.3 + i * 12, box.y + box.height * 0.3 + i * 4);
+  }
+  // 枠の外にはみ出してから、また中にもどる
+  for (let i = 1; i <= 12; i++) {
+    await page.mouse.move(box.x + box.width + 40 - i * 14, box.y + box.height * 0.6 + i * 3);
+  }
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+
+  const ink = await page.locator('.card', { hasText: '手書きの調子をしらべる' }).innerText();
+  check('1画として数えられる', ink.includes('1 画'), ink.match(/書けた画の数\s*\S+/)?.[0] ?? '');
+  check('入力の種類が分かる', ink.includes('マウス'));
+  check('枠からはみ出しても1画が切れない',
+    Number(ink.match(/(\d+)点\/長さ/)?.[1] ?? 0) >= 15,
+    ink.match(/\d+点\/長さ\d+/)?.[0] ?? '');
+  check('取り消されていない', !ink.includes('途中で取り消されています'));
+  check('できごとの記録が出る', ink.includes('書きはじめ') && ink.includes('書きおわり'));
+  await page.screenshot({ path: `${SHOTS}/pwa-inktest.png`, fullPage: true });
+
   // ライセンス表示（KanjiVG などは、アプリの中に出どころを書く決まりがある）
   await page.getByRole('button', { name: '出どころと決まりを見る' }).click();
   await page.waitForTimeout(300);

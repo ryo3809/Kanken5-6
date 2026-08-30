@@ -30,10 +30,24 @@ interface Options {
   replay?: Point[][];
   /** 線が増えたり減ったりしたときに呼ばれる（座標は 109×109 のマス目） */
   onStrokesChange?: (strokes: Point[][]) => void;
+  /**
+   * 入力のできごとを知らせる（ふだんは使いません）。
+   * おうちの人の画面の「ためしがき」で、
+   * 指やペンがどう届いているかを調べるために使います。
+   */
+  onEvent?: (kind: InkEventKind, pointerType: string) => void;
 }
 
+/** 入力のできごとの種類（調べるとき用） */
+export type InkEventKind =
+  | 'down'      // 書きはじめた
+  | 'reject'    // 手のひら防止で無視した
+  | 'up'        // ふつうに書きおわった
+  | 'cancel'    // ブラウザに取り消された（画面のスクロールと判断されたときなど）
+  | 'lost';     // 途中で入力の受けとりを失った
+
 export function useInk({
-  onStrokeEnd, clearOnStart, color, disabled, replay, onStrokesChange,
+  onStrokeEnd, clearOnStart, color, disabled, replay, onStrokesChange, onEvent,
 }: Options) {
   const boxRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -166,7 +180,11 @@ export function useInk({
   function localPoint(e: React.PointerEvent): Point {
     const r = rectRef.current ?? boxRef.current?.getBoundingClientRect();
     if (!r) return { x: 0, y: 0 };
-    return { x: e.clientX - r.left, y: e.clientY - r.top };
+    // マスから少しはみ出しても、線が飛ばないように枠の中におさめる。
+    // 大きな字を書くと枠ぎりぎりまで来るので、ここで切らないと形がくずれます。
+    const x = Math.min(Math.max(e.clientX - r.left, 0), r.width);
+    const y = Math.min(Math.max(e.clientY - r.top, 0), r.height);
+    return { x, y };
   }
 
   /**
@@ -181,7 +199,9 @@ export function useInk({
       return true;
     }
     if (e.pointerType === 'touch') {
-      return Date.now() - lastPenAtRef.current > PEN_GUARD_MS;
+      const ok = Date.now() - lastPenAtRef.current > PEN_GUARD_MS;
+      if (!ok) onEvent?.('reject', e.pointerType);
+      return ok;
     }
     return true; // マウス（パソコンで確かめるとき）
   }
@@ -204,6 +224,7 @@ export function useInk({
     onPointerDown(e: React.PointerEvent) {
       if (disabled || activePointerRef.current !== null) return;
       if (!accepts(e)) return;
+      onEvent?.('down', e.pointerType);
       e.preventDefault();
       rectRef.current = boxRef.current?.getBoundingClientRect() ?? null;
       if (!rectRef.current) return;
@@ -229,9 +250,25 @@ export function useInk({
       pts.push(p);
       drawTo(p);
     },
-    onPointerUp: finish,
-    onPointerCancel: finish,
-    onPointerLeave: finish,
+    onPointerUp(e: React.PointerEvent) {
+      onEvent?.('up', e.pointerType);
+      finish(e);
+    },
+    // ブラウザが「これは画面のスクロールだ」と判断したときに来る。
+    // ここまでに書けた線は、捨てずに残す。
+    onPointerCancel(e: React.PointerEvent) {
+      onEvent?.('cancel', e.pointerType);
+      finish(e);
+    },
+    // 入力の受けとりを失ったときの受け皿。
+    // ※ onPointerLeave では終わらせません。
+    //   指がマスの外に少し出ただけで1画が切れてしまい、
+    //   大きな字が書けなくなるためです（枠の中におさめる処理で対応しています）。
+    onLostPointerCapture(e: React.PointerEvent) {
+      if (activePointerRef.current !== e.pointerId) return;
+      onEvent?.('lost', e.pointerType);
+      finish(e);
+    },
   };
 
   function finish(e: React.PointerEvent) {

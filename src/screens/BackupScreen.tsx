@@ -9,6 +9,7 @@ import { downloadBackup, restoreFromFile } from '../lib/backup';
 import { eraseAll } from '../lib/db';
 import { examSummary, recentDays, scaleTo200, sectionStats, selfGradeWarning } from '../lib/parent';
 import { isStandalone, offlineStatus, recacheNow, type OfflineStatus } from '../lib/pwa';
+import { InkTest } from '../components/InkTest';
 
 interface Props {
   onBack: () => void;
@@ -56,6 +57,8 @@ export function BackupScreen({
   const [showAllGrades, setShowAllGrades] = useState(false);
   /** オフラインの準備を調べた結果（ボタンを押したときだけ入る） */
   const [offline, setOffline] = useState<OfflineStatus | null>(null);
+  /** 「ためしがき」を開いているか */
+  const [showInkTest, setShowInkTest] = useState(false);
 
   const summary = useMemo(() => examSummary(exams), [exams]);
   const weak = useMemo(() => sectionStats(exams), [exams]);
@@ -494,6 +497,21 @@ export function BackupScreen({
               </button>
             </div>
           </>
+        )}
+      </div>
+
+      <div className="card">
+        <h2>手書きの調子をしらべる</h2>
+        <p className="muted">
+          なぞりがき・かきとりで うまく書けないときに、
+          指やペンの入力が届いているかを その場で確かめられます。
+        </p>
+        {showInkTest ? (
+          <InkTest />
+        ) : (
+          <button className="wide" onClick={() => setShowInkTest(true)}>
+            ためしがきを ひらく
+          </button>
         )}
       </div>
 
